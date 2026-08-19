@@ -9,12 +9,11 @@
 coverage.out
 
 # Local configuration and secrets
-/config/local.yaml
-/config/*.local.yaml
+/config/local.toml
+/config/*.local.toml
 *.secret
 .env
 
 # Frontend dependencies and output (introduced in a later phase)
 node_modules/
 /frontend/dist/
-

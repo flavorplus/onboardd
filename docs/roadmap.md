@@ -20,12 +20,13 @@ Exit criteria:
 - [x] Go module builds without external dependencies.
 - [x] VS Code build/debug/tasks are checked in.
 - [x] The repository clearly identifies Phase 1 as the next boundary.
-- [ ] Project owner reviews and accepts the Phase 0 contract.
+- [x] Project owner reviews and accepts the Phase 0 contract.
 
 ## Phase 1 — NetworkManager D-Bus proof of concept
 
 Scope:
 
+- record the Pi Zero 2 W's OS architecture, kernel, firmware, and NetworkManager version;
 - choose and isolate the Go D-Bus client dependency;
 - discover the configured Wi-Fi interface;
 - inspect devices, active connections, and saved profiles;
@@ -82,7 +83,7 @@ seeing NetworkManager terminology.
 
 ## Phase 5 — Branding and configuration
 
-Implement YAML loading, environment/CLI overrides, schema/runtime validation, safe
+Implement TOML loading, environment/CLI overrides, schema/runtime validation, safe
 templates, custom text, colors, logos, SSIDs, and product identity. Embed the compiled
 frontend in the Go binary.
 
@@ -132,4 +133,3 @@ Exit criterion: documented v1 support matrix and repeatable release checklist.
 - cloud and fleet management;
 - VPN and router features;
 - simultaneous multi-radio operation.
-

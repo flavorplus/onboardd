@@ -10,9 +10,9 @@ code ~/GitHub/onboardd
 
 The checked-in `.vscode` configuration provides:
 
-- extension recommendations for Go, YAML, EditorConfig, and Markdown;
+- extension recommendations for Go, TOML, EditorConfig, and Markdown;
 - automatic Go formatting and import organization on save;
-- YAML validation against `config/schema.json`;
+- TOML formatting, navigation, completion, and validation against `config/schema.json`;
 - build, test, vet, format, and full-check tasks;
 - launch configurations for the daemon and its version output;
 - visible file nesting for generated companions without hiding project content.
@@ -72,4 +72,3 @@ onboardd/
 
 Directories are added when their phase begins; empty placeholder directories are not
 kept solely to make the future tree appear complete.
-

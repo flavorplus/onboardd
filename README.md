@@ -10,12 +10,12 @@ of the core daemon.
 
 ## Project status
 
-The project is being developed one phase at a time. **Phase 0 is currently ready for
-review.** NetworkManager behavior intentionally starts in Phase 1.
+The project is being developed one phase at a time. **Phase 0 is complete.**
+NetworkManager behavior intentionally starts in Phase 1.
 
 | Phase | Deliverable | Status |
 |---|---|---|
-| 0 | Architecture, contracts, repository and editor setup | Ready for review |
+| 0 | Architecture, contracts, repository and editor setup | Complete |
 | 1 | NetworkManager D-Bus proof of concept | Not started |
 | 2 | Core reconciliation and transient state engine | Not started |
 | 3 | Temporary AP and captive portal plumbing | Not started |
@@ -36,7 +36,7 @@ See the [roadmap](docs/roadmap.md) for the scope and exit criteria of every phas
 - No separate `state.json` for networking mode.
 - Infrastructure and standalone are persistent operating modes.
 - Provisioning is a temporary, in-memory NetworkManager profile.
-- Configuration is loaded from defaults, YAML, environment variables, and CLI options.
+- Configuration is loaded from defaults, TOML, environment variables, and CLI options.
 - Product names, colors, logos, copy, and application handoff are configuration—not forks.
 
 The full design is in [Architecture](docs/architecture.md) and the public configuration
@@ -51,7 +51,7 @@ Open this repository as a folder:
 code ~/GitHub/onboardd
 ```
 
-VS Code will recommend the Go, YAML, EditorConfig, and Markdown extensions. The Run and
+VS Code will recommend the Go, TOML, EditorConfig, and Markdown extensions. The Run and
 Debug panel contains launch configurations, and **Terminal → Run Task** exposes build,
 format, test, vet, and full-check tasks.
 
@@ -68,6 +68,13 @@ See [Development](docs/development.md) for the editor workflow and repository la
 
 ## Configuration preview
 
-The proposed contract is demonstrated in [config/example.yaml](config/example.yaml) and
+The proposed contract is demonstrated in [config/example.toml](config/example.toml) and
 described by [config/schema.json](config/schema.json). It is a Phase 0 contract; loading
 and validating it is scheduled for a later implementation phase.
+
+## Initial target
+
+The first hardware baseline is a Raspberry Pi Zero 2 W running Raspberry Pi OS Trixie.
+The daemon must stay lightweight enough for the Zero 2 W's 512 MB of memory. ARM64 is
+the default build/test assumption; the exact OS image architecture is verified before
+the Phase 1 hardware acceptance run.

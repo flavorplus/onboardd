@@ -15,13 +15,9 @@
       "source.organizeImports": "explicit"
     }
   },
-  "[yaml]": {
-    "editor.defaultFormatter": "redhat.vscode-yaml"
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml"
   },
-  "yaml.schemas": {
-    "./config/schema.json": ["config/*.yaml", "config/*.yml", "integration/**/*.yaml"]
-  },
-  "yaml.validate": true,
   "markdownlint.config": {
     "MD013": false
   },
@@ -31,4 +27,3 @@
     "README.md": "LICENSE, CONTRIBUTING.md, CHANGELOG.md"
   }
 }
-

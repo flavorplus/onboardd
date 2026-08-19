@@ -1,5 +1,9 @@
 # Configuration contract
 
+TOML is the human-edited configuration format. It supports comments and typed values
+without indentation-sensitive nesting. The repository's Taplo configuration connects
+TOML files to `config/schema.json` so VS Code can provide completion and validation.
+
 ## Precedence
 
 Configuration is resolved in the following order, with later sources overriding earlier
@@ -8,7 +12,7 @@ ones:
 ```text
 built-in defaults
         ↓
-/etc/onboardd/config.yaml
+/etc/onboardd/config.toml
         ↓
 ONBOARDD_* environment variables
         ↓
@@ -21,7 +25,7 @@ other users and diagnostic tools.
 
 ## Contract files
 
-- `config/example.yaml` is the annotated reference configuration.
+- `config/example.toml` is the annotated reference configuration.
 - `config/schema.json` is the machine-readable structural contract.
 - Product-specific examples will later live under `integration/<product>/`.
 
@@ -34,26 +38,28 @@ reachable.
 
 Mode availability and connectivity requirements are separate concepts.
 
-```yaml
-network:
-  requirement: local
-  modes:
-    infrastructure:
-      enabled: true
-    standalone:
-      enabled: true
+```toml
+[network]
+requirement = "local"
+
+[network.modes.infrastructure]
+enabled = true
+
+[network.modes.standalone]
+enabled = true
 ```
 
 For a cloud-only appliance:
 
-```yaml
-network:
-  requirement: internet
-  modes:
-    infrastructure:
-      enabled: true
-    standalone:
-      enabled: false
+```toml
+[network]
+requirement = "internet"
+
+[network.modes.infrastructure]
+enabled = true
+
+[network.modes.standalone]
+enabled = false
 ```
 
 At least one production mode must be enabled. If standalone is disabled, it is absent
@@ -93,4 +99,3 @@ string.
 
 The root `schema_version` is mandatory. Breaking contract changes increment it and
 require a documented migration. Additive optional fields may retain the same version.
-

@@ -1,0 +1,13 @@
+include = ["config/*.toml", "integration/**/*.toml"]
+
+[formatting]
+align_entries = false
+reorder_keys = false
+
+[[rule]]
+include = ["config/*.toml", "integration/**/*.toml"]
+
+[rule.schema]
+path = "./config/schema.json"
+enabled = true
+

@@ -1,0 +1,61 @@
+#:schema ./schema.json
+
+schema_version = 1
+
+[product]
+name = "Display Player"
+device_name = "Lobby Display"
+
+[branding]
+logo = "/etc/onboardd/company.svg"
+
+[branding.colors]
+primary = "#16232E"
+accent = "#4879FF"
+background = "#FFFFFF"
+
+[branding.text]
+title = "Set up your display"
+subtitle = "Choose how this display should connect."
+
+[network]
+interface = "wlan0"
+requirement = "local"
+
+[network.modes.infrastructure]
+enabled = true
+
+[network.modes.standalone]
+enabled = true
+
+[network.connectivity]
+grace_period = "30s"
+
+[network.provisioning]
+ssid = "{{ .ProductName }}-Setup-{{ .DeviceID }}"
+password_file = "/etc/onboardd/provisioning-password"
+address = "10.42.0.1/24"
+
+[network.standalone]
+ssid = "{{ .ProductName }}-{{ .DeviceID }}"
+password_file = "/etc/onboardd/standalone-password"
+address = "10.42.0.1/24"
+
+[portal]
+hostname = "setup.local"
+
+[handoff]
+enabled = true
+label = "Continue to player"
+url = "http://player.local/"
+auto_redirect = false
+
+[handoff.wait_for]
+url = "http://127.0.0.1:8000/health"
+timeout = "30s"
+
+[recovery.gpio]
+enabled = false
+pin = 17
+hold_for = "5s"
+

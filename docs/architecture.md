@@ -24,6 +24,20 @@ NetworkManager owns Wi-Fi devices, connection profiles, activation, IP configura
 and persistent network settings. `onboardd` owns policy, orchestration, the captive
 setup experience, product branding, and recovery behavior.
 
+## Initial deployment baseline
+
+The first hardware target is a Raspberry Pi Zero 2 W running Raspberry Pi OS Trixie.
+This establishes several design constraints:
+
+- the daemon and embedded assets must remain comfortable within a 512 MB device;
+- expensive background polling and unnecessary runtime dependencies are avoided;
+- the web interface runs in the user's phone or computer browser, not in a browser on
+  the Pi;
+- ARM64 is the initial build assumption, with the actual Trixie image architecture
+  recorded before the first hardware acceptance run;
+- hardware tests use the Zero 2 W's real Wi-Fi interface and firmware rather than
+  assuming behavior from desktop Linux.
+
 ## Network roles
 
 | Role | Profile storage | Meaning |
@@ -189,4 +203,3 @@ internal/handoff             product application discovery and handoff
 internal/recovery            checkpoints, retries, and recovery input
 integration                  product example configurations
 ```
-

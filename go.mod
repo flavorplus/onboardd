@@ -1,4 +1,3 @@
-module github.com/jvermeulen/onboardd
+module github.com/flavorplus/onboardd
 
 go 1.23
-

@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/jvermeulen/onboardd/internal/buildinfo"
+	"github.com/flavorplus/onboardd/internal/buildinfo"
 )
 
 func main() {

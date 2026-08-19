@@ -1,9 +1,8 @@
 {
   "recommendations": [
     "golang.go",
-    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml",
     "editorconfig.editorconfig",
     "davidanson.vscode-markdownlint"
   ]
 }
-

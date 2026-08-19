@@ -1,37 +1,33 @@
-# Open decisions
+# Decision log and open questions
 
-This file keeps provisional assumptions visible. A choice is removed from this list
-when it has been accepted and recorded in the relevant contract or an architecture
-decision record.
+This file records important Phase 0 choices and keeps remaining evidence-driven
+questions visible. Larger decisions can move into individual architecture decision
+records as the project grows.
 
-## Confirm during Phase 0 review
+## Resolved during Phase 0
 
 ### Go module path
 
-The scaffold currently uses:
+The repository and Go module use:
 
 ```text
-github.com/jvermeulen/onboardd
+github.com/flavorplus/onboardd
 ```
 
-This matches the local owner name and repository folder but should be changed before
-published packages depend on it if the eventual GitHub organization or account differs.
+The configured `origin` remote is `https://github.com/flavorplus/onboardd.git`.
 
 ### License
 
-No license has been added. The intended open-source license must be selected explicitly.
-MIT and Apache-2.0 are likely candidates, but the project owner should choose based on
-the desired patent and attribution terms.
+The project uses Apache License 2.0. It permits commercial and private use,
+modification, and redistribution while providing explicit patent terms and preserving
+license/notice obligations.
 
 ### Initial hardware/software baseline
 
-The plan targets current Raspberry Pi OS with NetworkManager on an ARM64 Raspberry Pi.
-Before Phase 1 hardware acceptance, record:
-
-- Raspberry Pi model and Wi-Fi chipset;
-- Raspberry Pi OS release;
-- NetworkManager version;
-- whether Anthias or a clean Raspberry Pi OS image is the first test environment.
+The first hardware target is Raspberry Pi Zero 2 W with Raspberry Pi OS Trixie and its
+NetworkManager-based networking stack. ARM64 is the initial build assumption. The exact
+Trixie image architecture and NetworkManager version will be captured from the device at
+the beginning of Phase 1.
 
 ## Resolve through Phase 1 evidence
 
@@ -59,4 +55,3 @@ restore an accessible AP.
 - TypeScript frontend framework or framework-free approach: Phase 4.
 - Exact environment-variable and CLI flag surface: Phase 5.
 - `.deb` ownership, capabilities, and service hardening: Phase 8.
-
