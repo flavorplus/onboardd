@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Go: build onboardd",
+      "type": "process",
+      "command": "go",
+      "args": ["build", "-o", "${workspaceFolder}/bin/onboardd", "./cmd/onboardd"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$go"
+    },
+    {
+      "label": "Go: test all",
+      "type": "process",
+      "command": "go",
+      "args": ["test", "./..."],
+      "group": "test",
+      "problemMatcher": "$go"
+    },
+    {
+      "label": "Go: vet all",
+      "type": "process",
+      "command": "go",
+      "args": ["vet", "./..."],
+      "problemMatcher": "$go"
+    },
+    {
+      "label": "Go: format all",
+      "type": "process",
+      "command": "go",
+      "args": ["fmt", "./..."],
+      "problemMatcher": []
+    },
+    {
+      "label": "Check: all",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Go: format all", "Go: test all", "Go: vet all", "Go: build onboardd"],
+      "problemMatcher": []
+    }
+  ]
+}
+

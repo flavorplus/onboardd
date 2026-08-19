@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jvermeulen/onboardd/config/schema.json",
+  "title": "onboardd configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product", "network"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "device_name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "branding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "logo": { "type": "string", "minLength": 1 },
+        "colors": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "primary": { "$ref": "#/$defs/color" },
+            "accent": { "$ref": "#/$defs/color" },
+            "background": { "$ref": "#/$defs/color" }
+          }
+        },
+        "text": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "title": { "type": "string", "minLength": 1 },
+            "subtitle": { "type": "string" }
+          }
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interface", "requirement", "modes"],
+      "properties": {
+        "interface": { "type": "string", "minLength": 1 },
+        "requirement": {
+          "type": "string",
+          "enum": ["local", "internet"]
+        },
+        "modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["infrastructure", "standalone"],
+          "properties": {
+            "infrastructure": { "$ref": "#/$defs/mode" },
+            "standalone": { "$ref": "#/$defs/mode" }
+          },
+          "anyOf": [
+            {
+              "properties": {
+                "infrastructure": {
+                  "properties": { "enabled": { "const": true } },
+                  "required": ["enabled"]
+                }
+              }
+            },
+            {
+              "properties": {
+                "standalone": {
+                  "properties": { "enabled": { "const": true } },
+                  "required": ["enabled"]
+                }
+              }
+            }
+          ]
+        },
+        "connectivity": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "grace_period": { "$ref": "#/$defs/duration" }
+          }
+        },
+        "provisioning": { "$ref": "#/$defs/access_point" },
+        "standalone": { "$ref": "#/$defs/access_point" }
+      }
+    },
+    "portal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hostname": { "$ref": "#/$defs/hostname" }
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "label": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "format": "uri" },
+        "auto_redirect": { "type": "boolean" },
+        "wait_for": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "timeout"],
+          "properties": {
+            "url": { "type": "string", "format": "uri" },
+            "timeout": { "$ref": "#/$defs/duration" }
+          }
+        }
+      }
+    },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gpio": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "pin": { "type": "integer", "minimum": 0 },
+            "hold_for": { "$ref": "#/$defs/duration" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "mode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "access_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ssid", "address"],
+      "properties": {
+        "ssid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "password_file": { "type": "string", "minLength": 1 },
+        "address": { "type": "string", "minLength": 1 }
+      }
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h)$"
+    },
+    "hostname": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$"
+    }
+  }
+}
+

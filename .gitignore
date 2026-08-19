@@ -1,0 +1,20 @@
+.DS_Store
+.idea/
+
+# Go build and test output
+/bin/
+/dist/
+*.test
+*.out
+coverage.out
+
+# Local configuration and secrets
+/config/local.yaml
+/config/*.local.yaml
+*.secret
+.env
+
+# Frontend dependencies and output (introduced in a later phase)
+node_modules/
+/frontend/dist/
+
