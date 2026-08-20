@@ -10,13 +10,13 @@ of the core daemon.
 
 ## Project status
 
-The project is being developed one phase at a time. **Phase 0 is complete.**
-NetworkManager behavior intentionally starts in Phase 1.
+The project is being developed one phase at a time. **Phases 0 and 1 are complete.**
+Phase 2 is the current implementation boundary.
 
 | Phase | Deliverable | Status |
 |---|---|---|
 | 0 | Architecture, contracts, repository and editor setup | Complete |
-| 1 | NetworkManager D-Bus proof of concept | Not started |
+| 1 | NetworkManager D-Bus proof of concept | Complete |
 | 2 | Core reconciliation and transient state engine | Not started |
 | 3 | Temporary AP and captive portal plumbing | Not started |
 | 4 | Setup API and web interface | Not started |
@@ -76,5 +76,26 @@ and validating it is scheduled for a later implementation phase.
 
 The first hardware baseline is a Raspberry Pi Zero 2 W running Raspberry Pi OS Trixie.
 The daemon must stay lightweight enough for the Zero 2 W's 512 MB of memory. ARM64 is
-the default build/test assumption; the exact OS image architecture is verified before
-the Phase 1 hardware acceptance run.
+the default build/test assumption and was validated during the Phase 1 hardware run.
+
+## Phase 1 diagnostics
+
+The current binary contains direct NetworkManager D-Bus diagnostics:
+
+```text
+onboardd debug status
+onboardd debug profiles
+onboardd debug scan
+onboardd debug watch
+onboardd debug connect
+onboardd debug provisioning-start
+onboardd debug standalone-start
+onboardd debug checkpoint-create
+onboardd debug checkpoint-commit
+onboardd debug checkpoint-rollback
+```
+
+Run `onboardd debug help` for the safety flags and complete command forms. Commands that
+change networking require `--yes`; credentials are accepted only through password files.
+The [Phase 1 hardware checklist](docs/phase-1-hardware-checklist.md) records the accepted
+Raspberry Pi validation boundary.

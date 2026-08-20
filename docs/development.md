@@ -40,10 +40,11 @@ go fmt ./...
 go test ./...
 go vet ./...
 go build -o bin/onboardd ./cmd/onboardd
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/onboardd-linux-arm64 ./cmd/onboardd
 ```
 
-The current Phase 0 executable is only a compilable shell. NetworkManager code begins in
-Phase 1.
+Phase 1's D-Bus code is unit-tested on macOS and hardware-tested on Raspberry Pi OS
+Trixie. Use the dedicated VS Code cross-build task to produce the Pi binary.
 
 ## Repository layout
 

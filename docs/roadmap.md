@@ -24,6 +24,8 @@ Exit criteria:
 
 ## Phase 1 — NetworkManager D-Bus proof of concept
 
+Status: complete. Accepted on Raspberry Pi Zero 2 W with Raspberry Pi OS Trixie.
+
 Scope:
 
 - record the Pi Zero 2 W's OS architecture, kernel, firmware, and NetworkManager version;
@@ -53,6 +55,20 @@ onboardd debug standalone-start
 Exit criterion: on the target Raspberry Pi, the binary can reliably demonstrate
 `status → scan → provisioning AP → infrastructure → standalone AP → infrastructure`
 without production code invoking `nmcli`.
+
+Local completion:
+
+- [x] Direct D-Bus adapter isolated in `internal/networkmanager`.
+- [x] Access-point and infrastructure settings builders.
+- [x] `user.data` ownership and role metadata.
+- [x] Disk and in-memory `AddConnection2` support.
+- [x] Profile inspection and owned-only deletion guard.
+- [x] Wi-Fi scan and access-point decoding.
+- [x] Property-change signal stream.
+- [x] Checkpoint create, commit, and rollback calls.
+- [x] Debug CLI with disruptive-operation confirmation.
+- [x] Local tests and ARM64 cross-build.
+- [x] Zero 2 W/Trixie hardware checklist completed.
 
 ## Phase 2 — Reconciliation and transient state engine
 

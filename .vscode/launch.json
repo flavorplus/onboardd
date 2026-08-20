@@ -15,7 +15,14 @@
       "mode": "debug",
       "program": "${workspaceFolder}/cmd/onboardd",
       "args": ["--version"]
+    },
+    {
+      "name": "Debug Phase 1 help",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/onboardd",
+      "args": ["debug", "help"]
     }
   ]
 }
-

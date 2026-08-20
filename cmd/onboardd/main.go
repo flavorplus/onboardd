@@ -1,20 +1,21 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/flavorplus/onboardd/internal/buildinfo"
+	"github.com/flavorplus/onboardd/internal/cli"
 )
 
 func main() {
-	showVersion := flag.Bool("version", false, "print version information")
-	flag.Parse()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	if *showVersion {
-		fmt.Printf("onboardd %s\n", buildinfo.Version)
-		return
+	if err := cli.Run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
+		fmt.Fprintf(os.Stderr, "onboardd: %v\n", err)
+		os.Exit(1)
 	}
-
-	fmt.Println("onboardd: Phase 0 project scaffold")
 }

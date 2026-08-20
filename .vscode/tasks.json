@@ -21,6 +21,25 @@
       "problemMatcher": "$go"
     },
     {
+      "label": "Go: build Pi Zero 2 W",
+      "type": "process",
+      "command": "go",
+      "args": [
+        "build",
+        "-o",
+        "${workspaceFolder}/bin/onboardd-linux-arm64",
+        "./cmd/onboardd"
+      ],
+      "options": {
+        "env": {
+          "GOOS": "linux",
+          "GOARCH": "arm64",
+          "CGO_ENABLED": "0"
+        }
+      },
+      "problemMatcher": "$go"
+    },
+    {
       "label": "Go: vet all",
       "type": "process",
       "command": "go",
@@ -37,9 +56,14 @@
     {
       "label": "Check: all",
       "dependsOrder": "sequence",
-      "dependsOn": ["Go: format all", "Go: test all", "Go: vet all", "Go: build onboardd"],
+      "dependsOn": [
+        "Go: format all",
+        "Go: test all",
+        "Go: vet all",
+        "Go: build onboardd",
+        "Go: build Pi Zero 2 W"
+      ],
       "problemMatcher": []
     }
   ]
 }
-
