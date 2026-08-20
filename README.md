@@ -10,14 +10,14 @@ of the core daemon.
 
 ## Project status
 
-The project is being developed one phase at a time. **Phases 0 and 1 are complete.**
-Phase 2 is the current implementation boundary.
+The project is being developed one phase at a time. **Phases 0, 1, and 2 are complete.**
+Phase 3 is the next implementation boundary.
 
 | Phase | Deliverable | Status |
 |---|---|---|
 | 0 | Architecture, contracts, repository and editor setup | Complete |
 | 1 | NetworkManager D-Bus proof of concept | Complete |
-| 2 | Core reconciliation and transient state engine | Not started |
+| 2 | Core reconciliation and transient state engine | Complete |
 | 3 | Temporary AP and captive portal plumbing | Not started |
 | 4 | Setup API and web interface | Not started |
 | 5 | Branding and configuration | Not started |
@@ -93,6 +93,7 @@ onboardd debug standalone-start
 onboardd debug checkpoint-create
 onboardd debug checkpoint-commit
 onboardd debug checkpoint-rollback
+onboardd debug reconcile
 ```
 
 Run `onboardd debug help` for the safety flags and complete command forms. Commands that

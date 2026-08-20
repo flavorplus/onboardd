@@ -103,6 +103,75 @@ func TestBuildAccessPointSettings(t *testing.T) {
 	}
 }
 
+func TestRebuildOwnedInfrastructureSettings(t *testing.T) {
+	current, _, err := BuildInfrastructureSettings(InfrastructureOptions{
+		UUID:        testUUID,
+		Interface:   "wlan0",
+		SSID:        "Office",
+		Password:    "original-password",
+		Hidden:      true,
+		Autoconnect: false,
+		Priority:    20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(current["802-11-wireless-security"], "psk")
+	current["ipv6"]["addresses"] = dbus.MakeVariantWithSignature(
+		[]any{},
+		dbus.ParseSignatureMust("a(ayuay)"),
+	)
+	secrets := Settings{
+		"802-11-wireless-security": {"psk": dbus.MakeVariant("secret-password")},
+	}
+	profile := Profile{
+		ID: "Office profile", UUID: testUUID, Interface: "wlan0", SSID: "Office",
+		Priority: 20, Owned: true, Role: RoleInfrastructure,
+	}
+
+	rebuilt, err := rebuildOwnedSettings(profile, current, secrets, true)
+	if err != nil {
+		t.Fatalf("rebuildOwnedSettings() error = %v", err)
+	}
+	assertVariant(t, rebuilt, "connection", "autoconnect", true)
+	assertVariant(t, rebuilt, "802-11-wireless", "hidden", true)
+	assertVariant(t, rebuilt, "802-11-wireless-security", "psk", "secret-password")
+	if _, exists := rebuilt["ipv6"]["addresses"]; exists {
+		t.Fatal("rebuilt settings retained NetworkManager legacy property")
+	}
+}
+
+func TestRebuildOwnedStandaloneSettings(t *testing.T) {
+	current, _, err := BuildAccessPointSettings(AccessPointOptions{
+		UUID: testUUID, Interface: "wlan0", SSID: "Display-A42F",
+		Password: "original-password", Address: "10.42.0.1/24",
+		Role: RoleStandalone, Autoconnect: true, Priority: 999, Band: "bg",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(current["802-11-wireless-security"], "psk")
+	secrets := Settings{
+		"802-11-wireless-security": {"psk": dbus.MakeVariant("secret-password")},
+	}
+	profile := Profile{
+		ID: "onboardd standalone", UUID: testUUID, Interface: "wlan0",
+		SSID: "Display-A42F", Priority: 999, Owned: true, Role: RoleStandalone,
+	}
+
+	rebuilt, err := rebuildOwnedSettings(profile, current, secrets, false)
+	if err != nil {
+		t.Fatalf("rebuildOwnedSettings() error = %v", err)
+	}
+	assertVariant(t, rebuilt, "connection", "autoconnect", false)
+	assertVariant(t, rebuilt, "802-11-wireless", "band", "bg")
+	assertVariant(t, rebuilt, "802-11-wireless-security", "psk", "secret-password")
+	addresses := rebuilt["ipv4"]["address-data"].Value().([]map[string]dbus.Variant)
+	if got := variantString(addresses[0]["address"]); got != "10.42.0.1" {
+		t.Fatalf("rebuilt address = %q", got)
+	}
+}
+
 func TestSettingsValidation(t *testing.T) {
 	tests := []struct {
 		name  string

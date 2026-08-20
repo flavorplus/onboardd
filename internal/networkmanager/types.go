@@ -161,6 +161,8 @@ type Device struct {
 	State            DeviceState `json:"state"`
 	StateName        string      `json:"state_name"`
 	ActiveConnection string      `json:"active_connection,omitempty"`
+	ActiveUUID       string      `json:"active_uuid,omitempty"`
+	IPv4Addresses    []string    `json:"ipv4_addresses,omitempty"`
 }
 
 // Profile is a safe summary of a saved or in-memory connection profile. Secrets are
@@ -172,6 +174,7 @@ type Profile struct {
 	Type           string `json:"type"`
 	Interface      string `json:"interface,omitempty"`
 	SSID           string `json:"ssid,omitempty"`
+	Mode           string `json:"mode,omitempty"`
 	Autoconnect    bool   `json:"autoconnect"`
 	Priority       int32  `json:"autoconnect_priority"`
 	Owned          bool   `json:"owned_by_onboardd"`

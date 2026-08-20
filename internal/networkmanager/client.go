@@ -165,6 +165,9 @@ func (c *Client) Profiles(ctx context.Context) ([]Profile, error) {
 	for _, path := range paths {
 		profile, err := c.profile(ctx, path)
 		if err != nil {
+			if isObjectGone(err) {
+				continue
+			}
 			return nil, fmt.Errorf("read profile %s: %w", path, err)
 		}
 		profiles = append(profiles, profile)
@@ -362,7 +365,7 @@ func (c *Client) ConnectInfrastructure(
 	if err != nil {
 		return Activation{}, err
 	}
-	activation, err := c.addAndActivate(
+	return c.addAndActivate(
 		ctx,
 		options.Interface,
 		settings,
@@ -370,21 +373,6 @@ func (c *Client) ConnectInfrastructure(
 		uuid,
 		RoleInfrastructure,
 	)
-	if err != nil {
-		return Activation{}, err
-	}
-	if err := c.deleteSupersededProfiles(ctx, profileScope{
-		interfaceName: options.Interface,
-		role:          RoleInfrastructure,
-		ssid:          options.SSID,
-	}, uuid); err != nil {
-		return activation, fmt.Errorf(
-			"infrastructure profile %s was activated, but superseded profile cleanup failed: %w",
-			uuid,
-			err,
-		)
-	}
-	return activation, nil
 }
 
 // StartAccessPoint creates and activates a provisioning or standalone AP profile.
@@ -400,22 +388,120 @@ func (c *Client) StartAccessPoint(
 	if options.Role == RoleStandalone {
 		persistence = PersistenceDisk
 	}
-	activation, err := c.addAndActivate(ctx, options.Interface, settings, persistence, uuid, options.Role)
+	return c.addAndActivate(ctx, options.Interface, settings, persistence, uuid, options.Role)
+}
+
+// FinalizeTransition updates durable mode intent and removes superseded profiles only
+// after the caller has confirmed that activation succeeded.
+func (c *Client) FinalizeTransition(
+	ctx context.Context,
+	interfaceName string,
+	role Role,
+	ssid string,
+	keepUUID string,
+) error {
+	if role != RoleInfrastructure && role != RoleStandalone && role != RoleProvisioning {
+		return fmt.Errorf("cannot finalize unknown network role %q", role)
+	}
+	scope := profileScope{interfaceName: interfaceName, role: role}
+	if role == RoleInfrastructure {
+		scope.ssid = ssid
+	}
+	if role == RoleProvisioning {
+		if err := c.deleteSupersededProfiles(ctx, scope, keepUUID); err != nil {
+			return fmt.Errorf("remove superseded %s profiles: %w", role, err)
+		}
+		return nil
+	}
+	// Record the new durable intent before deleting the old profile. If either
+	// operation fails, at least one usable production profile remains eligible
+	// for autoconnect on the next boot.
+	if err := c.selectMode(ctx, interfaceName, role); err != nil {
+		return err
+	}
+	if err := c.deleteSupersededProfiles(ctx, scope, keepUUID); err != nil {
+		return fmt.Errorf("remove superseded %s profiles: %w", role, err)
+	}
+	return nil
+}
+
+func (c *Client) selectMode(ctx context.Context, interfaceName string, role Role) error {
+	profiles, err := c.Profiles(ctx)
 	if err != nil {
-		return Activation{}, err
+		return err
 	}
-	if err := c.deleteSupersededProfiles(ctx, profileScope{
-		interfaceName: options.Interface,
-		role:          options.Role,
-	}, uuid); err != nil {
-		return activation, fmt.Errorf(
-			"%s profile %s was activated, but superseded profile cleanup failed: %w",
-			options.Role,
-			uuid,
-			err,
-		)
+	updates := autoconnectUpdates(profiles, interfaceName, role)
+	for _, update := range updates {
+		if err := c.updateAutoconnect(ctx, update.Profile, update.Enabled); err != nil {
+			if isObjectGone(err) {
+				continue
+			}
+			return err
+		}
 	}
-	return activation, nil
+	return nil
+}
+
+type autoconnectUpdate struct {
+	Profile Profile
+	Enabled bool
+}
+
+func autoconnectUpdates(profiles []Profile, interfaceName string, selected Role) []autoconnectUpdate {
+	var updates []autoconnectUpdate
+	for _, profile := range profiles {
+		if !profile.Owned || profile.Interface != interfaceName {
+			continue
+		}
+		if profile.Role != RoleInfrastructure && profile.Role != RoleStandalone {
+			continue
+		}
+		enabled := profile.Role == selected
+		if profile.Autoconnect != enabled {
+			updates = append(updates, autoconnectUpdate{Profile: profile, Enabled: enabled})
+		}
+	}
+	// Enable the selected mode first. A failure can then leave both modes
+	// eligible, but never leaves a device with every production mode disabled.
+	sort.SliceStable(updates, func(left, right int) bool {
+		return updates[left].Enabled && !updates[right].Enabled
+	})
+	return updates
+}
+
+func (c *Client) updateAutoconnect(ctx context.Context, profile Profile, enabled bool) error {
+	path := dbus.ObjectPath(profile.Path)
+	current, err := c.connectionSettings(ctx, path)
+	if err != nil {
+		return fmt.Errorf("read profile %s for autoconnect update: %w", profile.UUID, err)
+	}
+	secrets := Settings{}
+	if _, secured := current["802-11-wireless-security"]; secured {
+		secrets, err = c.connectionSecrets(ctx, path, "802-11-wireless-security")
+		if err != nil {
+			return fmt.Errorf("read profile %s secrets for autoconnect update: %w", profile.UUID, err)
+		}
+	}
+	settings, err := rebuildOwnedSettings(profile, current, secrets, enabled)
+	if err != nil {
+		return fmt.Errorf("rebuild profile %s for autoconnect update: %w", profile.UUID, err)
+	}
+	persistence := PersistenceDisk
+	if profile.Persistence == "memory" {
+		persistence = PersistenceMemory
+	}
+	var result map[string]dbus.Variant
+	if err := c.object(path).CallWithContext(
+		ctx,
+		settingsConnectionIface+".Update2",
+		0,
+		settings,
+		uint32(persistence),
+		map[string]dbus.Variant{},
+	).Store(&result); err != nil {
+		return fmt.Errorf("set autoconnect=%t on profile %s: %w", enabled, profile.UUID, err)
+	}
+	return nil
 }
 
 // deleteSupersededProfiles makes creating an onboardd profile idempotent.
@@ -436,6 +522,9 @@ func (c *Client) deleteSupersededProfiles(
 			settingsConnectionIface+".Delete",
 			0,
 		).Store(); err != nil {
+			if isObjectGone(err) {
+				continue
+			}
 			return fmt.Errorf("delete superseded profile %s: %w", profile.UUID, err)
 		}
 	}
@@ -555,6 +644,17 @@ func (c *Client) device(ctx context.Context, path dbus.ObjectPath) (Device, erro
 	if err != nil {
 		return Device{}, err
 	}
+	activeUUID := ""
+	if active != noSpecificObject {
+		activeUUID, err = c.stringProperty(ctx, active, activeConnectionIface, "Uuid")
+		if err != nil {
+			return Device{}, err
+		}
+	}
+	ipv4Addresses, err := c.deviceIPv4Addresses(ctx, path)
+	if err != nil {
+		return Device{}, err
+	}
 	state := DeviceState(stateValue)
 	return Device{
 		Path:             string(path),
@@ -564,7 +664,44 @@ func (c *Client) device(ctx context.Context, path dbus.ObjectPath) (Device, erro
 		State:            state,
 		StateName:        state.String(),
 		ActiveConnection: cleanRootPath(active),
+		ActiveUUID:       activeUUID,
+		IPv4Addresses:    ipv4Addresses,
 	}, nil
+}
+
+func (c *Client) deviceIPv4Addresses(ctx context.Context, devicePath dbus.ObjectPath) ([]string, error) {
+	configPath, err := c.objectPathProperty(ctx, devicePath, deviceInterface, "Ip4Config")
+	if err != nil {
+		return nil, err
+	}
+	if configPath == noSpecificObject {
+		return nil, nil
+	}
+	value, err := c.property(
+		ctx,
+		configPath,
+		"org.freedesktop.NetworkManager.IP4Config",
+		"AddressData",
+	)
+	if err != nil {
+		return nil, err
+	}
+	addressData, ok := value.Value().([]map[string]dbus.Variant)
+	if !ok {
+		return nil, propertyTypeError(
+			"org.freedesktop.NetworkManager.IP4Config",
+			"AddressData",
+			"array of string/variant maps",
+			value.Value(),
+		)
+	}
+	addresses := make([]string, 0, len(addressData))
+	for _, item := range addressData {
+		if address := variantString(item["address"]); address != "" {
+			addresses = append(addresses, address)
+		}
+	}
+	return addresses, nil
 }
 
 func (c *Client) devicePath(ctx context.Context, interfaceName string) (dbus.ObjectPath, error) {
@@ -591,12 +728,8 @@ func (c *Client) devicePath(ctx context.Context, interfaceName string) (dbus.Obj
 }
 
 func (c *Client) profile(ctx context.Context, path dbus.ObjectPath) (Profile, error) {
-	settings := Settings{}
-	if err := c.object(path).CallWithContext(
-		ctx,
-		settingsConnectionIface+".GetSettings",
-		0,
-	).Store(&settings); err != nil {
+	settings, err := c.connectionSettings(ctx, path)
+	if err != nil {
 		return Profile{}, err
 	}
 	unsaved, err := c.boolProperty(ctx, path, settingsConnectionIface, "Unsaved")
@@ -625,6 +758,7 @@ func (c *Client) profile(ctx context.Context, path dbus.ObjectPath) (Profile, er
 		Type:           variantString(connection["type"]),
 		Interface:      variantString(connection["interface-name"]),
 		SSID:           string(ssidBytes),
+		Mode:           variantString(wireless["mode"]),
 		Autoconnect:    variantBoolDefault(connection["autoconnect"], true),
 		Priority:       variantInt32(connection["autoconnect-priority"]),
 		Owned:          owner,
@@ -635,6 +769,76 @@ func (c *Client) profile(ctx context.Context, path dbus.ObjectPath) (Profile, er
 		Unsaved:        unsaved,
 		Flags:          flags,
 	}, nil
+}
+
+// connectionSettings deliberately reads the raw call body instead of Call.Store.
+// Store recursively reconstructs nested variants from their Go representation, which
+// can lose the original signature of legacy tuple-valued NetworkManager settings.
+func (c *Client) connectionSettings(ctx context.Context, path dbus.ObjectPath) (Settings, error) {
+	call := c.object(path).CallWithContext(
+		ctx,
+		settingsConnectionIface+".GetSettings",
+		0,
+	)
+	if call.Err != nil {
+		return nil, call.Err
+	}
+	return settingsFromCallBody(call.Body)
+}
+
+func settingsFromCallBody(body []any) (Settings, error) {
+	if len(body) != 1 {
+		return nil, fmt.Errorf("GetSettings returned %d fields, expected one", len(body))
+	}
+	settings, ok := body[0].(map[string]map[string]dbus.Variant)
+	if !ok {
+		return nil, fmt.Errorf("GetSettings returned %T, expected a{sa{sv}}", body[0])
+	}
+	return Settings(settings), nil
+}
+
+func (c *Client) connectionSecrets(
+	ctx context.Context,
+	path dbus.ObjectPath,
+	settingName string,
+) (Settings, error) {
+	call := c.object(path).CallWithContext(
+		ctx,
+		settingsConnectionIface+".GetSecrets",
+		0,
+		settingName,
+	)
+	if call.Err != nil {
+		return nil, call.Err
+	}
+	return settingsFromCallBody(call.Body)
+}
+
+func isObjectGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pointerError *dbus.Error
+	if errors.As(err, &pointerError) {
+		return objectGoneErrorName(pointerError.Name)
+	}
+	var valueError dbus.Error
+	if errors.As(err, &valueError) {
+		return objectGoneErrorName(valueError.Name)
+	}
+	return false
+}
+
+func objectGoneErrorName(name string) bool {
+	switch name {
+	case "org.freedesktop.DBus.Error.UnknownObject",
+		"org.freedesktop.DBus.Error.UnknownInterface",
+		"org.freedesktop.DBus.Error.UnknownMethod",
+		"org.freedesktop.NetworkManager.UnknownConnection":
+		return true
+	default:
+		return false
+	}
 }
 
 func profilePersistence(filename string) string {

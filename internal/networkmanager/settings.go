@@ -184,6 +184,93 @@ func BuildAccessPointSettings(options AccessPointOptions) (Settings, string, err
 	return settings, uuid, nil
 }
 
+// rebuildOwnedSettings creates a fresh, well-typed D-Bus settings map from the
+// deliberately small profile schema onboardd owns. GetSettings also contains
+// NetworkManager-generated legacy values that must not be blindly sent back
+// through godbus because tuple values lose their concrete Go types on decode.
+func rebuildOwnedSettings(
+	profile Profile,
+	current Settings,
+	secrets Settings,
+	autoconnect bool,
+) (Settings, error) {
+	wireless, ok := current["802-11-wireless"]
+	if !ok {
+		return nil, errors.New("missing 802-11-wireless settings")
+	}
+
+	switch profile.Role {
+	case RoleInfrastructure:
+		_, secured := current["802-11-wireless-security"]
+		password := ""
+		if secured {
+			var err error
+			password, err = profilePSK(current, secrets)
+			if err != nil {
+				return nil, err
+			}
+		}
+		settings, _, err := BuildInfrastructureSettings(InfrastructureOptions{
+			ID:          profile.ID,
+			UUID:        profile.UUID,
+			Interface:   profile.Interface,
+			SSID:        profile.SSID,
+			Password:    password,
+			Open:        !secured,
+			Hidden:      variantBoolDefault(wireless["hidden"], false),
+			Autoconnect: autoconnect,
+			Priority:    profile.Priority,
+		})
+		return settings, err
+	case RoleStandalone:
+		password, err := profilePSK(current, secrets)
+		if err != nil {
+			return nil, err
+		}
+		address, err := profileAddress(current)
+		if err != nil {
+			return nil, err
+		}
+		settings, _, err := BuildAccessPointSettings(AccessPointOptions{
+			ID:          profile.ID,
+			UUID:        profile.UUID,
+			Interface:   profile.Interface,
+			SSID:        profile.SSID,
+			Password:    password,
+			Address:     address,
+			Role:        RoleStandalone,
+			Autoconnect: autoconnect,
+			Priority:    profile.Priority,
+			Band:        variantString(wireless["band"]),
+		})
+		return settings, err
+	default:
+		return nil, fmt.Errorf("cannot rebuild profile with role %q", profile.Role)
+	}
+}
+
+func profilePSK(current, secrets Settings) (string, error) {
+	for _, source := range []Settings{secrets, current} {
+		if password := variantString(source["802-11-wireless-security"]["psk"]); password != "" {
+			return password, nil
+		}
+	}
+	return "", errors.New("WPA password was not available from NetworkManager")
+}
+
+func profileAddress(settings Settings) (string, error) {
+	addressData, ok := settings["ipv4"]["address-data"].Value().([]map[string]dbus.Variant)
+	if !ok || len(addressData) == 0 {
+		return "", errors.New("standalone profile has no IPv4 address-data")
+	}
+	address := variantString(addressData[0]["address"])
+	prefix, ok := addressData[0]["prefix"].Value().(uint32)
+	if address == "" || !ok || prefix > 32 {
+		return "", errors.New("standalone profile has invalid IPv4 address-data")
+	}
+	return fmt.Sprintf("%s/%d", address, prefix), nil
+}
+
 func metadata(role Role) map[string]dbus.Variant {
 	return variants(map[string]any{
 		"data": map[string]string{

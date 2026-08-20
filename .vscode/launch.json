@@ -23,6 +23,13 @@
       "mode": "debug",
       "program": "${workspaceFolder}/cmd/onboardd",
       "args": ["debug", "help"]
+    },
+    {
+      "name": "Debug Phase 2 state tests",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/internal/state"
     }
   ]
 }

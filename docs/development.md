@@ -15,6 +15,7 @@ The checked-in `.vscode` configuration provides:
 - TOML formatting, navigation, completion, and validation against `config/schema.json`;
 - build, test, vet, format, and full-check tasks;
 - launch configurations for the daemon and its version output;
+- a dedicated Phase 2 state-test debugger;
 - visible file nesting for generated companions without hiding project content.
 
 Use **Terminal → Run Task → Check: all** before handing off a phase. Use the Run and
@@ -40,11 +41,20 @@ go fmt ./...
 go test ./...
 go vet ./...
 go build -o bin/onboardd ./cmd/onboardd
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/onboardd-linux-arm64 ./cmd/onboardd
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags=-buildid= -o bin/onboardd-linux-arm64 ./cmd/onboardd
 ```
 
 Phase 1's D-Bus code is unit-tested on macOS and hardware-tested on Raspberry Pi OS
-Trixie. Use the dedicated VS Code cross-build task to produce the Pi binary.
+Trixie. Use the dedicated VS Code cross-build task to produce the Pi binary. Its
+`-trimpath`, disabled VCS stamping, and an empty Go build ID make repeated builds from
+the same source and Go toolchain byte-for-byte identical regardless of output path or
+Git dirty state. Compare
+`shasum -a 256 bin/onboardd-linux-arm64` locally with `sha256sum ~/onboardd` on the Pi
+before every hardware test.
+
+Phase 2 reconciliation tests use a fake NetworkManager observer and manually controlled
+clock. Run or debug `internal/state` without waiting for real timeouts or changing the
+development machine's network.
 
 ## Repository layout
 

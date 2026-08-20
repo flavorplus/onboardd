@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/flavorplus/onboardd/internal/buildinfo"
+	"github.com/flavorplus/onboardd/internal/connectivity"
 	"github.com/flavorplus/onboardd/internal/networkmanager"
+	stateengine "github.com/flavorplus/onboardd/internal/state"
 )
 
 const defaultInterface = "wlan0"
@@ -69,6 +71,8 @@ func runDebug(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 		return debugAccessPoint(ctx, args[1:], stdout, stderr, networkmanager.RoleStandalone)
 	case "watch":
 		return debugWatch(ctx, args[1:], stdout, stderr)
+	case "reconcile":
+		return debugReconcile(ctx, args[1:], stdout, stderr)
 	case "checkpoint-create":
 		return debugCheckpointCreate(ctx, args[1:], stdout, stderr)
 	case "checkpoint-commit":
@@ -253,7 +257,7 @@ func debugConnect(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	hidden := flags.Bool("hidden", false, "target network hides its SSID")
 	id := flags.String("id", "", "optional human-readable NetworkManager profile ID")
 	priority := flags.Int("priority", 0, "autoconnect priority from -999 to 999")
-	wait := flags.Duration("wait", 30*time.Second, "maximum activation wait; zero returns immediately")
+	wait := flags.Duration("wait", 30*time.Second, "maximum time to confirm activation")
 	yes := flags.Bool("yes", false, "confirm the disruptive Wi-Fi change")
 	jsonOutput := flags.Bool("json", false, "print JSON output")
 	if err := flags.Parse(args); err != nil {
@@ -267,6 +271,9 @@ func debugConnect(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	if *priority < -999 || *priority > 999 {
 		return errors.New("--priority must be between -999 and 999")
+	}
+	if *wait <= 0 {
+		return errors.New("--wait must be positive so activation can be confirmed before selecting infrastructure mode")
 	}
 	password, err := readPassword(*passwordFile, *open)
 	if err != nil {
@@ -285,7 +292,7 @@ func debugConnect(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		Password:    password,
 		Open:        *open,
 		Hidden:      *hidden,
-		Autoconnect: true,
+		Autoconnect: false,
 		Priority:    int32(*priority),
 	})
 	if err != nil {
@@ -293,6 +300,15 @@ func debugConnect(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	if err := client.WaitForActivation(ctx, activation.ActivePath, *wait); err != nil {
 		return fmt.Errorf("profile %s was created but activation failed: %w", activation.UUID, err)
+	}
+	if err := client.FinalizeTransition(
+		ctx,
+		*interfaceName,
+		networkmanager.RoleInfrastructure,
+		*ssid,
+		activation.UUID,
+	); err != nil {
+		return fmt.Errorf("profile %s activated but mode selection failed: %w", activation.UUID, err)
 	}
 	return writeActivation(stdout, activation, *jsonOutput)
 }
@@ -311,7 +327,7 @@ func debugAccessPoint(
 	address := flags.String("address", "10.42.0.1/24", "access-point IPv4 address and prefix")
 	band := flags.String("band", "bg", "Wi-Fi band: bg, a, or 6GHz")
 	id := flags.String("id", "", "optional human-readable NetworkManager profile ID")
-	wait := flags.Duration("wait", 30*time.Second, "maximum activation wait; zero returns immediately")
+	wait := flags.Duration("wait", 30*time.Second, "maximum time to confirm activation")
 	yes := flags.Bool("yes", false, "confirm the disruptive Wi-Fi change")
 	jsonOutput := flags.Bool("json", false, "print JSON output")
 	if err := flags.Parse(args); err != nil {
@@ -323,14 +339,16 @@ func debugAccessPoint(
 	if !*yes {
 		return errors.New("starting an access point changes the active Wi-Fi interface; repeat with --yes after ensuring a recovery path")
 	}
+	if *wait <= 0 {
+		return errors.New("--wait must be positive so activation can be confirmed before selecting access-point mode")
+	}
 	password, err := readRequiredPassword(*passwordFile)
 	if err != nil {
 		return err
 	}
 
-	autoconnect := role == networkmanager.RoleStandalone
 	priority := int32(0)
-	if autoconnect {
+	if role == networkmanager.RoleStandalone {
 		priority = 999
 	}
 	client, err := openClient()
@@ -345,7 +363,7 @@ func debugAccessPoint(
 		Password:    password,
 		Address:     *address,
 		Role:        role,
-		Autoconnect: autoconnect,
+		Autoconnect: false,
 		Priority:    priority,
 		Band:        *band,
 	})
@@ -354,6 +372,9 @@ func debugAccessPoint(
 	}
 	if err := client.WaitForActivation(ctx, activation.ActivePath, *wait); err != nil {
 		return fmt.Errorf("profile %s was created but activation failed: %w", activation.UUID, err)
+	}
+	if err := client.FinalizeTransition(ctx, *interfaceName, role, *ssid, activation.UUID); err != nil {
+		return fmt.Errorf("profile %s activated but mode selection failed: %w", activation.UUID, err)
 	}
 	return writeActivation(stdout, activation, *jsonOutput)
 }
@@ -405,6 +426,104 @@ func debugWatch(ctx context.Context, args []string, stdout, stderr io.Writer) er
 				return watchErr
 			}
 		}
+	}
+	return nil
+}
+
+func debugReconcile(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("debug reconcile", stderr)
+	interfaceName := flags.String("interface", defaultInterface, "NetworkManager Wi-Fi interface")
+	requirementValue := flags.String("requirement", string(connectivity.RequirementLocal), "connectivity requirement: local or internet")
+	gracePeriod := flags.Duration("grace-period", 30*time.Second, "connectivity and activation grace period")
+	watch := flags.Bool("watch", false, "continue reconciling until interrupted")
+	jsonOutput := flags.Bool("json", false, "print JSON output")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(flags); err != nil {
+		return err
+	}
+	requirement := connectivity.Requirement(*requirementValue)
+	if err := requirement.Validate(); err != nil {
+		return err
+	}
+	if *gracePeriod <= 0 {
+		return errors.New("--grace-period must be positive")
+	}
+
+	client, err := openClient()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	observer := stateengine.NewNetworkManagerObserver(client, *interfaceName)
+	engine, err := stateengine.New(observer, stateengine.Config{
+		Requirement: requirement,
+		GracePeriod: *gracePeriod,
+	})
+	if err != nil {
+		return err
+	}
+	if !*watch {
+		current, inspectErr := engine.Inspect(ctx)
+		if inspectErr != nil {
+			return inspectErr
+		}
+		return writeReconciliationState(stdout, current, *jsonOutput)
+	}
+
+	transitions, engineErrors, err := engine.Run(ctx)
+	if err != nil {
+		return err
+	}
+	ctxDone := ctx.Done()
+	for transitions != nil || engineErrors != nil {
+		select {
+		case <-ctxDone:
+			// Let the engine publish its final stopped transition and close its
+			// channels before the D-Bus client is closed by this function.
+			ctxDone = nil
+		case transition, ok := <-transitions:
+			if !ok {
+				transitions = nil
+				continue
+			}
+			if *jsonOutput {
+				if err := writeJSON(stdout, transition); err != nil {
+					return err
+				}
+				continue
+			}
+			fmt.Fprintf(
+				stdout,
+				"%s\t%d\t%s\t%s\t%s\t%s\n",
+				time.Now().UTC().Format(time.RFC3339),
+				transition.Current.Sequence,
+				transition.Current.Stage,
+				transition.Current.Mode,
+				transition.Current.Reason,
+				emptyAsDash(transition.Current.Detail),
+			)
+		case engineErr, ok := <-engineErrors:
+			if !ok {
+				engineErrors = nil
+				continue
+			}
+			fmt.Fprintf(stderr, "onboardd reconcile: %v\n", engineErr)
+		}
+	}
+	return nil
+}
+
+func writeReconciliationState(stdout io.Writer, current stateengine.State, jsonOutput bool) error {
+	if jsonOutput {
+		return writeJSON(stdout, current)
+	}
+	fmt.Fprintf(stdout, "Stage: %s\n", current.Stage)
+	fmt.Fprintf(stdout, "Mode: %s\n", current.Mode)
+	fmt.Fprintf(stdout, "Reason: %s\n", current.Reason)
+	if current.Detail != "" {
+		fmt.Fprintf(stdout, "Detail: %s\n", current.Detail)
 	}
 	return nil
 }
@@ -573,17 +692,18 @@ func printRootHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  onboardd --version")
 	fmt.Fprintln(writer, "  onboardd debug <command> [options]")
 	fmt.Fprintln(writer)
-	fmt.Fprintln(writer, "Run 'onboardd debug help' for Phase 1 NetworkManager tools.")
+	fmt.Fprintln(writer, "Run 'onboardd debug help' for NetworkManager and reconciliation tools.")
 }
 
 func printDebugHelp(writer io.Writer) {
-	fmt.Fprintln(writer, "Phase 1 NetworkManager D-Bus diagnostics")
+	fmt.Fprintln(writer, "NetworkManager D-Bus and reconciliation diagnostics")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Read-only commands:")
 	fmt.Fprintln(writer, "  onboardd debug status [--interface wlan0] [--json]")
 	fmt.Fprintln(writer, "  onboardd debug profiles [--owned] [--json]")
 	fmt.Fprintln(writer, "  onboardd debug scan [--interface wlan0] [--wait 5s] [--json]")
 	fmt.Fprintln(writer, "  onboardd debug watch [--json]")
+	fmt.Fprintln(writer, "  onboardd debug reconcile [--requirement local|internet] [--watch] [--json]")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Checkpoint commands:")
 	fmt.Fprintln(writer, "  onboardd debug checkpoint-create [--interface wlan0] [--rollback-after 90s]")

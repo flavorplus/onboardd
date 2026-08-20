@@ -32,6 +32,7 @@ func TestDebugHelp(t *testing.T) {
 		"provisioning-start",
 		"standalone-start",
 		"watch",
+		"reconcile",
 		"checkpoint-create",
 		"checkpoint-commit",
 		"checkpoint-rollback",
@@ -39,6 +40,30 @@ func TestDebugHelp(t *testing.T) {
 		if !strings.Contains(stdout.String(), command) {
 			t.Errorf("help is missing command %q", command)
 		}
+	}
+}
+
+func TestReconcileRejectsInvalidPolicyBeforeDBus(t *testing.T) {
+	err := Run(
+		context.Background(),
+		[]string{"debug", "reconcile", "--requirement", "sometimes"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "unknown connectivity requirement") {
+		t.Fatalf("error = %v, want connectivity requirement validation", err)
+	}
+}
+
+func TestModeChangeRequiresActivationWaitBeforeDBus(t *testing.T) {
+	err := Run(
+		context.Background(),
+		[]string{"debug", "connect", "--ssid", "Office", "--open", "--wait", "0", "--yes"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "--wait must be positive") {
+		t.Fatalf("error = %v, want positive activation wait validation", err)
 	}
 }
 

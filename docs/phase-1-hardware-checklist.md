@@ -33,8 +33,11 @@ version, Wi-Fi interface name, and whether the device is managed.
 In VS Code run **Go: build Pi Zero 2 W**, or locally:
 
 ```bash
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/onboardd-linux-arm64 ./cmd/onboardd
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags=-buildid= -o bin/onboardd-linux-arm64 ./cmd/onboardd
 ```
+
+Before testing, compare `shasum -a 256 bin/onboardd-linux-arm64` on the development
+machine with `sha256sum ~/onboardd` on the Pi. The hashes must match.
 
 Transfer the binary to the Pi and make it executable. If the Trixie image is 32-bit,
 record that finding and produce a `GOARCH=arm` build before continuing.

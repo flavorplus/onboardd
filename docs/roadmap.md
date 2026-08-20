@@ -72,6 +72,8 @@ Local completion:
 
 ## Phase 2 — Reconciliation and transient state engine
 
+Status: complete.
+
 Implement boot reconciliation, typed events, timeouts, cancellation, connectivity
 requirements, and unit tests using a fake NetworkManager adapter. No persistent state
 file is introduced.
@@ -79,6 +81,18 @@ file is introduced.
 Exit criterion: deterministic tests cover successful startup, failed activation,
 connectivity failure, standalone persistence, disconnection, restart, and interrupted
 transitions.
+
+Implementation checklist:
+
+- [x] Normalized NetworkManager snapshot and observer boundary.
+- [x] Separate local and Internet connectivity policy.
+- [x] Typed reconciliation events and observable transitions.
+- [x] Grace-period timer that is cancelled when no longer needed.
+- [x] Context cancellation and clean interrupted-transition handling.
+- [x] Fake observer and deterministic clock.
+- [x] Exit-criterion scenario tests.
+- [x] Real NetworkManager observer and read-only debug command.
+- [x] Raspberry Pi observer and mode-transition smoke check.
 
 ## Phase 3 — Temporary AP and captive portal plumbing
 

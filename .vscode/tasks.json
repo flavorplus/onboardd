@@ -26,6 +26,9 @@
       "command": "go",
       "args": [
         "build",
+        "-trimpath",
+        "-buildvcs=false",
+        "-ldflags=-buildid=",
         "-o",
         "${workspaceFolder}/bin/onboardd-linux-arm64",
         "./cmd/onboardd"
