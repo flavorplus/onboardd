@@ -10,15 +10,15 @@ of the core daemon.
 
 ## Project status
 
-The project is being developed one phase at a time. **Phases 0, 1, and 2 are complete.**
-Phase 3 is the next implementation boundary.
+The project is being developed one phase at a time. **Phases 0 through 3 are complete.**
+Phase 4 is the current implementation boundary.
 
 | Phase | Deliverable | Status |
 |---|---|---|
 | 0 | Architecture, contracts, repository and editor setup | Complete |
 | 1 | NetworkManager D-Bus proof of concept | Complete |
 | 2 | Core reconciliation and transient state engine | Complete |
-| 3 | Temporary AP and captive portal plumbing | Not started |
+| 3 | Temporary AP and captive portal plumbing | Complete |
 | 4 | Setup API and web interface | Not started |
 | 5 | Branding and configuration | Not started |
 | 6 | Application handoff | Not started |
@@ -78,7 +78,7 @@ The first hardware baseline is a Raspberry Pi Zero 2 W running Raspberry Pi OS T
 The daemon must stay lightweight enough for the Zero 2 W's 512 MB of memory. ARM64 is
 the default build/test assumption and was validated during the Phase 1 hardware run.
 
-## Phase 1 diagnostics
+## Network diagnostics
 
 The current binary contains direct NetworkManager D-Bus diagnostics:
 
@@ -90,6 +90,8 @@ onboardd debug watch
 onboardd debug connect
 onboardd debug provisioning-start
 onboardd debug standalone-start
+onboardd debug captive-start
+onboardd debug connect-protected
 onboardd debug checkpoint-create
 onboardd debug checkpoint-commit
 onboardd debug checkpoint-rollback
@@ -100,3 +102,13 @@ Run `onboardd debug help` for the safety flags and complete command forms. Comma
 change networking require `--yes`; credentials are accepted only through password files.
 The [Phase 1 hardware checklist](docs/phase-1-hardware-checklist.md) records the accepted
 Raspberry Pi validation boundary.
+
+Phase 3's `captive-start` diagnostic runs the complete temporary provisioning lifecycle:
+wildcard DNS, the in-memory AP, address confirmation, a private HTTP listener, and an
+interface-scoped nftables redirect. An existing appliance application can retain port 80
+while provisioning traffic reaches onboardd. The command stays in the foreground until
+interrupted so cleanup can remove the temporary profile, redirect, and DNS fragment.
+
+`connect-protected` is the matching recovery diagnostic. It creates a NetworkManager
+checkpoint before trying infrastructure and confirms that the active provisioning UUID
+and address return after any rejected attempt.

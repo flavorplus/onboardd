@@ -138,6 +138,95 @@ func (s DeviceState) String() string {
 	}
 }
 
+// DeviceStateReason explains why NetworkManager changed a device's state.
+type DeviceStateReason uint32
+
+const (
+	DeviceStateReasonNone                     DeviceStateReason = 0
+	DeviceStateReasonUnknown                  DeviceStateReason = 1
+	DeviceStateReasonConfigFailed             DeviceStateReason = 4
+	DeviceStateReasonIPConfigUnavailable      DeviceStateReason = 5
+	DeviceStateReasonIPConfigExpired          DeviceStateReason = 6
+	DeviceStateReasonNoSecrets                DeviceStateReason = 7
+	DeviceStateReasonSupplicantDisconnect     DeviceStateReason = 8
+	DeviceStateReasonSupplicantConfigFailed   DeviceStateReason = 9
+	DeviceStateReasonSupplicantFailed         DeviceStateReason = 10
+	DeviceStateReasonSupplicantTimeout        DeviceStateReason = 11
+	DeviceStateReasonDHCPStartFailed          DeviceStateReason = 15
+	DeviceStateReasonDHCPError                DeviceStateReason = 16
+	DeviceStateReasonDHCPFailed               DeviceStateReason = 17
+	DeviceStateReasonSharedStartFailed        DeviceStateReason = 18
+	DeviceStateReasonSharedFailed             DeviceStateReason = 19
+	DeviceStateReasonFirmwareMissing          DeviceStateReason = 35
+	DeviceStateReasonRemoved                  DeviceStateReason = 36
+	DeviceStateReasonSleeping                 DeviceStateReason = 37
+	DeviceStateReasonConnectionRemoved        DeviceStateReason = 38
+	DeviceStateReasonUserRequested            DeviceStateReason = 39
+	DeviceStateReasonCarrier                  DeviceStateReason = 40
+	DeviceStateReasonDependencyFailed         DeviceStateReason = 50
+	DeviceStateReasonSSIDNotFound             DeviceStateReason = 53
+	DeviceStateReasonNewActivation            DeviceStateReason = 60
+	DeviceStateReasonIPAddressDuplicate       DeviceStateReason = 64
+	DeviceStateReasonIPMethodUnsupported      DeviceStateReason = 65
+	DeviceStateReasonDeviceHandlerFailed      DeviceStateReason = 68
+	DeviceStateReasonUnmanagedByDefault       DeviceStateReason = 69
+	DeviceStateReasonUnmanagedExternalDown    DeviceStateReason = 70
+	DeviceStateReasonUnmanagedLinkNotInit     DeviceStateReason = 71
+	DeviceStateReasonUnmanagedQuitting        DeviceStateReason = 72
+	DeviceStateReasonUnmanagedManagerDisabled DeviceStateReason = 73
+	DeviceStateReasonUnmanagedUserConfig      DeviceStateReason = 74
+	DeviceStateReasonUnmanagedUserExplicit    DeviceStateReason = 75
+	DeviceStateReasonUnmanagedUserSettings    DeviceStateReason = 76
+	DeviceStateReasonUnmanagedUserUdev        DeviceStateReason = 77
+	DeviceStateReasonNetworkingOff            DeviceStateReason = 78
+)
+
+func (r DeviceStateReason) String() string {
+	names := map[DeviceStateReason]string{
+		DeviceStateReasonNone:                     "none",
+		DeviceStateReasonUnknown:                  "unknown",
+		DeviceStateReasonConfigFailed:             "config-failed",
+		DeviceStateReasonIPConfigUnavailable:      "ip-config-unavailable",
+		DeviceStateReasonIPConfigExpired:          "ip-config-expired",
+		DeviceStateReasonNoSecrets:                "no-secrets",
+		DeviceStateReasonSupplicantDisconnect:     "supplicant-disconnect",
+		DeviceStateReasonSupplicantConfigFailed:   "supplicant-config-failed",
+		DeviceStateReasonSupplicantFailed:         "supplicant-failed",
+		DeviceStateReasonSupplicantTimeout:        "supplicant-timeout",
+		DeviceStateReasonDHCPStartFailed:          "dhcp-start-failed",
+		DeviceStateReasonDHCPError:                "dhcp-error",
+		DeviceStateReasonDHCPFailed:               "dhcp-failed",
+		DeviceStateReasonSharedStartFailed:        "shared-start-failed",
+		DeviceStateReasonSharedFailed:             "shared-failed",
+		DeviceStateReasonFirmwareMissing:          "firmware-missing",
+		DeviceStateReasonRemoved:                  "removed",
+		DeviceStateReasonSleeping:                 "sleeping",
+		DeviceStateReasonConnectionRemoved:        "connection-removed",
+		DeviceStateReasonUserRequested:            "user-requested",
+		DeviceStateReasonCarrier:                  "carrier",
+		DeviceStateReasonDependencyFailed:         "dependency-failed",
+		DeviceStateReasonSSIDNotFound:             "ssid-not-found",
+		DeviceStateReasonNewActivation:            "new-activation",
+		DeviceStateReasonIPAddressDuplicate:       "ip-address-duplicate",
+		DeviceStateReasonIPMethodUnsupported:      "ip-method-unsupported",
+		DeviceStateReasonDeviceHandlerFailed:      "device-handler-failed",
+		DeviceStateReasonUnmanagedByDefault:       "unmanaged-by-default",
+		DeviceStateReasonUnmanagedExternalDown:    "unmanaged-external-down",
+		DeviceStateReasonUnmanagedLinkNotInit:     "unmanaged-link-not-init",
+		DeviceStateReasonUnmanagedQuitting:        "unmanaged-quitting",
+		DeviceStateReasonUnmanagedManagerDisabled: "unmanaged-manager-disabled",
+		DeviceStateReasonUnmanagedUserConfig:      "unmanaged-user-config",
+		DeviceStateReasonUnmanagedUserExplicit:    "unmanaged-user-explicit",
+		DeviceStateReasonUnmanagedUserSettings:    "unmanaged-user-settings",
+		DeviceStateReasonUnmanagedUserUdev:        "unmanaged-user-udev",
+		DeviceStateReasonNetworkingOff:            "networking-off",
+	}
+	if name, ok := names[r]; ok {
+		return name
+	}
+	return fmt.Sprintf("unknown(%d)", r)
+}
+
 // Status summarizes the NetworkManager daemon and requested interface.
 type Status struct {
 	Version                 string       `json:"version"`

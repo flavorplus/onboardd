@@ -1,0 +1,77 @@
+package captive
+
+import (
+	"context"
+	"errors"
+	"net"
+	"net/http"
+	"sync"
+	"time"
+)
+
+// HTTPServer owns one already-bound captive HTTP listener. Accepting a listener keeps
+// privileged binding and interface selection outside this package and makes lifecycle
+// behavior deterministic in tests.
+type HTTPServer struct {
+	server *http.Server
+	done   chan struct{}
+
+	mu       sync.RWMutex
+	serveErr error
+}
+
+// StartHTTPServer begins serving immediately and returns without blocking.
+func StartHTTPServer(listener net.Listener, handler http.Handler) (*HTTPServer, error) {
+	if listener == nil {
+		return nil, errors.New("HTTP listener is required")
+	}
+	if handler == nil {
+		return nil, errors.New("HTTP handler is required")
+	}
+
+	lifecycle := &HTTPServer{
+		server: &http.Server{
+			Handler:           handler,
+			ReadHeaderTimeout: 5 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		},
+		done: make(chan struct{}),
+	}
+	go func() {
+		err := lifecycle.server.Serve(listener)
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		lifecycle.mu.Lock()
+		lifecycle.serveErr = err
+		lifecycle.mu.Unlock()
+		close(lifecycle.done)
+	}()
+	return lifecycle, nil
+}
+
+// Done closes after the listener stops accepting requests.
+func (server *HTTPServer) Done() <-chan struct{} {
+	return server.done
+}
+
+// Wait waits for the listener to stop and returns any unexpected serving error.
+func (server *HTTPServer) Wait() error {
+	<-server.done
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+	return server.serveErr
+}
+
+// Shutdown gracefully stops the listener and waits for its serving goroutine.
+func (server *HTTPServer) Shutdown(ctx context.Context) error {
+	if err := server.server.Shutdown(ctx); err != nil {
+		return err
+	}
+	select {
+	case <-server.done:
+		return server.Wait()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}

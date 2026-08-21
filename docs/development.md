@@ -16,6 +16,7 @@ The checked-in `.vscode` configuration provides:
 - build, test, vet, format, and full-check tasks;
 - launch configurations for the daemon and its version output;
 - a dedicated Phase 2 state-test debugger;
+- a dedicated Phase 3 captive-test debugger;
 - visible file nesting for generated companions without hiding project content.
 
 Use **Terminal → Run Task → Check: all** before handing off a phase. Use the Run and
@@ -55,6 +56,11 @@ before every hardware test.
 Phase 2 reconciliation tests use a fake NetworkManager observer and manually controlled
 clock. Run or debug `internal/state` without waiting for real timeouts or changing the
 development machine's network.
+
+Phase 3 tests use fake NetworkManager/checkpoint adapters and in-memory HTTP connections,
+so `internal/captive` and `internal/recovery` can be debugged without opening local ports
+or changing the development machine's network. The target-device run is documented in
+`docs/phase-3-hardware-checklist.md`.
 
 ## Repository layout
 

@@ -96,11 +96,26 @@ Implementation checklist:
 
 ## Phase 3 — Temporary AP and captive portal plumbing
 
+Status: complete. Accepted on 2026-08-21 on Raspberry Pi Zero 2 W with Raspberry Pi OS
+Trixie.
+
 Implement the provisioning AP lifecycle, captive-detection endpoints, DNS/HTTP behavior,
 and automatic restoration following failed provisioning.
 
 Exit criterion: iOS, Android, Windows, and macOS can reach setup reliably on supported
 hardware, and a failed connection attempt restores the configuration path.
+
+Acceptance evidence:
+
+- NetworkManager shared-mode DHCP and wildcard captive DNS worked on the target.
+- Captive probe requests reached the canonical portal through the interface-scoped
+  nftables redirect while the appliance application retained port 80.
+- Two rejected credential attempts restored the same provisioning profile and address.
+- Correct credentials committed infrastructure mode and cleanly removed provisioning.
+- Standalone mode and the return to infrastructure selected the expected persistent
+  autoconnect intent without modifying foreign profiles.
+- Normal shutdown removed the temporary DNS fragment, nftables table, listener, and
+  provisioning profile.
 
 ## Phase 4 — Setup API and web interface
 

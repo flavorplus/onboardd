@@ -146,6 +146,40 @@ func (c *Client) objectPathProperty(
 	return result, nil
 }
 
+func (c *Client) deviceStateReason(
+	ctx context.Context,
+	path dbus.ObjectPath,
+) (DeviceState, DeviceStateReason, error) {
+	value, err := c.property(ctx, path, deviceInterface, "StateReason")
+	if err != nil {
+		return DeviceStateUnknown, DeviceStateReasonUnknown, err
+	}
+	return parseDeviceStateReason(value.Value())
+}
+
+func parseDeviceStateReason(value any) (DeviceState, DeviceStateReason, error) {
+	fields, ok := value.([]any)
+	if !ok || len(fields) != 2 {
+		return DeviceStateUnknown, DeviceStateReasonUnknown, propertyTypeError(
+			deviceInterface,
+			"StateReason",
+			"(uint32, uint32)",
+			value,
+		)
+	}
+	state, stateOK := fields[0].(uint32)
+	reason, reasonOK := fields[1].(uint32)
+	if !stateOK || !reasonOK {
+		return DeviceStateUnknown, DeviceStateReasonUnknown, propertyTypeError(
+			deviceInterface,
+			"StateReason",
+			"(uint32, uint32)",
+			value,
+		)
+	}
+	return DeviceState(state), DeviceStateReason(reason), nil
+}
+
 func propertyTypeError(interfaceName, propertyName, wanted string, actual any) error {
 	return fmt.Errorf(
 		"%s.%s returned %T, expected %s",

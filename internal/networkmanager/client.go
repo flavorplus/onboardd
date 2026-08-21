@@ -53,6 +53,7 @@ func (c *Client) Close() error {
 func (c *Client) WaitForActivation(
 	ctx context.Context,
 	activePath string,
+	interfaceName string,
 	wait time.Duration,
 ) error {
 	if !dbus.ObjectPath(activePath).IsValid() || activePath == "/" {
@@ -60,6 +61,10 @@ func (c *Client) WaitForActivation(
 	}
 	if wait <= 0 {
 		return nil
+	}
+	devicePath, err := c.devicePath(ctx, interfaceName)
+	if err != nil {
+		return err
 	}
 
 	deadline := time.NewTimer(wait)
@@ -75,13 +80,16 @@ func (c *Client) WaitForActivation(
 			"State",
 		)
 		if err != nil {
+			if isObjectGone(err) {
+				return c.activationFailure(ctx, devicePath, interfaceName)
+			}
 			return err
 		}
 		switch state {
 		case 2:
 			return nil
 		case 4:
-			return errors.New("NetworkManager deactivated the connection before it became ready")
+			return c.activationFailure(ctx, devicePath, interfaceName)
 		}
 
 		select {
@@ -92,6 +100,24 @@ func (c *Client) WaitForActivation(
 		case <-ticker.C:
 		}
 	}
+}
+
+func (c *Client) activationFailure(
+	ctx context.Context,
+	devicePath dbus.ObjectPath,
+	interfaceName string,
+) error {
+	state, reason, err := c.deviceStateReason(ctx, devicePath)
+	if err != nil {
+		return errors.New("NetworkManager removed the active connection before it became ready")
+	}
+	return fmt.Errorf(
+		"NetworkManager rejected the connection on %s: device state %s, reason %s (%d)",
+		interfaceName,
+		state,
+		reason,
+		reason,
+	)
 }
 
 // Status retrieves global NetworkManager status and the requested interface.
@@ -148,6 +174,20 @@ func (c *Client) Status(ctx context.Context, interfaceName string) (Status, erro
 		Startup:                 startup,
 		Device:                  device,
 	}, nil
+}
+
+// CheckConnectivity asks NetworkManager to run its configured connectivity check now
+// instead of relying on the most recently cached global result.
+func (c *Client) CheckConnectivity(ctx context.Context) (Connectivity, error) {
+	var value uint32
+	if err := c.object(managerPath).CallWithContext(
+		ctx,
+		managerInterface+".CheckConnectivity",
+		0,
+	).Store(&value); err != nil {
+		return ConnectivityUnknown, fmt.Errorf("request NetworkManager connectivity check: %w", err)
+	}
+	return Connectivity(value), nil
 }
 
 // Profiles lists all profiles visible to the D-Bus caller without requesting secrets.

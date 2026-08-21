@@ -133,3 +133,31 @@ func TestObjectGoneDBusErrors(t *testing.T) {
 		t.Fatal("unrelated error classified as a removed object")
 	}
 }
+
+func TestParseDeviceStateReason(t *testing.T) {
+	state, reason, err := parseDeviceStateReason([]any{
+		uint32(DeviceStateFailed),
+		uint32(DeviceStateReasonSSIDNotFound),
+	})
+	if err != nil {
+		t.Fatalf("parseDeviceStateReason() error = %v", err)
+	}
+	if state != DeviceStateFailed || reason != DeviceStateReasonSSIDNotFound {
+		t.Fatalf("parseDeviceStateReason() = %s, %s", state, reason)
+	}
+	if got := reason.String(); got != "ssid-not-found" {
+		t.Fatalf("reason.String() = %q, want ssid-not-found", got)
+	}
+}
+
+func TestParseDeviceStateReasonRejectsMalformedTuple(t *testing.T) {
+	for _, value := range []any{
+		"failed",
+		[]any{uint32(DeviceStateFailed)},
+		[]any{uint32(DeviceStateFailed), "ssid-not-found"},
+	} {
+		if _, _, err := parseDeviceStateReason(value); err == nil {
+			t.Fatalf("parseDeviceStateReason(%#v) error = nil", value)
+		}
+	}
+}

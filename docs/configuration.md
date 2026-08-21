@@ -95,6 +95,11 @@ Nested environment names use uppercase underscore-separated paths. CLI names use
 lowercase kebab case and should cover common operational overrides, not every branding
 string.
 
+The captive HTTP public port and onboardd listener port are separate. The default
+`public_port = 80` is redirected only on the provisioning interface to
+`listener_port = 18080`, allowing a product application to retain its own port 80
+listener.
+
 ## Compatibility
 
 The root `schema_version` is mandatory. Breaking contract changes increment it and

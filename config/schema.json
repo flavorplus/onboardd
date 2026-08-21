@@ -94,7 +94,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "hostname": { "$ref": "#/$defs/hostname" }
+        "hostname": { "$ref": "#/$defs/hostname" },
+        "public_port": { "$ref": "#/$defs/port" },
+        "listener_port": { "$ref": "#/$defs/port" }
       }
     },
     "handoff": {
@@ -147,7 +149,7 @@
       "additionalProperties": false,
       "required": ["ssid", "address"],
       "properties": {
-        "ssid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ssid": { "type": "string", "minLength": 1, "maxLength": 32 },
         "password_file": { "type": "string", "minLength": 1 },
         "address": { "type": "string", "minLength": 1 }
       }
@@ -163,6 +165,11 @@
     "hostname": {
       "type": "string",
       "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
     }
   }
 }

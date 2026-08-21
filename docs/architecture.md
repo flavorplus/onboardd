@@ -24,6 +24,12 @@ NetworkManager owns Wi-Fi devices, connection profiles, activation, IP configura
 and persistent network settings. `onboardd` owns policy, orchestration, the captive
 setup experience, product branding, and recovery behavior.
 
+During provisioning, the product application may already own TCP port 80. A temporary
+nftables rule redirects only port 80 traffic entering through the provisioning interface
+to onboardd's private HTTP listener. The rule uses a separately owned table and is
+removed with the captive lifecycle; traffic arriving through production interfaces keeps
+reaching the product application.
+
 ## Initial deployment baseline
 
 The first hardware target is a Raspberry Pi Zero 2 W running Raspberry Pi OS Trixie.
@@ -164,9 +170,12 @@ attempt activation and validate requirement
         └── failure ─► restore provisioning/standalone AP
 ```
 
-NetworkManager checkpoints will be evaluated during the D-Bus proof of concept. The
-invariant is more important than the mechanism: a failed network change must not leave
-the appliance permanently inaccessible.
+NetworkManager checkpoints protect the single-radio transition. The candidate is not
+made eligible for autoconnect until activation and the configured connectivity policy
+succeed. Failure rolls the checkpoint back, removes the rejected candidate, and confirms
+that the previous provisioning UUID and address are active again. The invariant remains
+more important than the mechanism: a failed change must not leave the appliance
+permanently inaccessible.
 
 ## Application handoff
 

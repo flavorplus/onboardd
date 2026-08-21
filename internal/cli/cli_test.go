@@ -31,6 +31,8 @@ func TestDebugHelp(t *testing.T) {
 		"connect",
 		"provisioning-start",
 		"standalone-start",
+		"captive-start",
+		"connect-protected",
 		"watch",
 		"reconcile",
 		"checkpoint-create",
@@ -40,6 +42,50 @@ func TestDebugHelp(t *testing.T) {
 		if !strings.Contains(stdout.String(), command) {
 			t.Errorf("help is missing command %q", command)
 		}
+	}
+}
+
+func TestCaptiveStartValidatesHTTPPortBeforeDBus(t *testing.T) {
+	err := Run(
+		context.Background(),
+		[]string{"debug", "captive-start", "--http-port", "0", "--yes"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "--http-port") {
+		t.Fatalf("error = %v, want HTTP port validation", err)
+	}
+}
+
+func TestCaptiveStartRequiresSeparateListenerPort(t *testing.T) {
+	err := Run(
+		context.Background(),
+		[]string{
+			"debug",
+			"captive-start",
+			"--http-port",
+			"8080",
+			"--listener-http-port",
+			"8080",
+			"--yes",
+		},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "must differ") {
+		t.Fatalf("error = %v, want separate listener port validation", err)
+	}
+}
+
+func TestProtectedConnectValidatesRequirementBeforeDBus(t *testing.T) {
+	err := Run(
+		context.Background(),
+		[]string{"debug", "connect-protected", "--requirement", "sometimes", "--yes"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "unknown connectivity requirement") {
+		t.Fatalf("error = %v, want requirement validation", err)
 	}
 }
 

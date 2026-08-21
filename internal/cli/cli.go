@@ -8,14 +8,19 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/netip"
 	"os"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/flavorplus/onboardd/internal/buildinfo"
+	"github.com/flavorplus/onboardd/internal/captive"
 	"github.com/flavorplus/onboardd/internal/connectivity"
 	"github.com/flavorplus/onboardd/internal/networkmanager"
+	"github.com/flavorplus/onboardd/internal/recovery"
 	stateengine "github.com/flavorplus/onboardd/internal/state"
 )
 
@@ -69,6 +74,10 @@ func runDebug(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 		return debugAccessPoint(ctx, args[1:], stdout, stderr, networkmanager.RoleProvisioning)
 	case "standalone-start":
 		return debugAccessPoint(ctx, args[1:], stdout, stderr, networkmanager.RoleStandalone)
+	case "captive-start":
+		return debugCaptiveStart(ctx, args[1:], stdout, stderr)
+	case "connect-protected":
+		return debugConnectProtected(ctx, args[1:], stdout, stderr)
 	case "watch":
 		return debugWatch(ctx, args[1:], stdout, stderr)
 	case "reconcile":
@@ -82,6 +91,203 @@ func runDebug(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 	default:
 		return fmt.Errorf("unknown debug command %q; run 'onboardd debug help'", args[0])
 	}
+}
+
+func debugConnectProtected(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("debug connect-protected", stderr)
+	interfaceName := flags.String("interface", defaultInterface, "NetworkManager Wi-Fi interface")
+	ssid := flags.String("ssid", "", "target Wi-Fi SSID")
+	passwordFile := flags.String("password-file", "", "file containing the Wi-Fi password")
+	open := flags.Bool("open", false, "connect to an explicitly open network")
+	hidden := flags.Bool("hidden", false, "target network hides its SSID")
+	id := flags.String("id", "", "optional human-readable NetworkManager profile ID")
+	priority := flags.Int("priority", 0, "autoconnect priority from -999 to 999")
+	requirementText := flags.String("requirement", "local", "connectivity requirement: local or internet")
+	activationWait := flags.Duration("wait", 30*time.Second, "maximum time to confirm candidate activation")
+	rollbackAfter := flags.Duration("rollback-after", 90*time.Second, "automatic checkpoint rollback duration")
+	restorationWait := flags.Duration("restoration-wait", 30*time.Second, "maximum time to confirm AP restoration")
+	provisioningUUID := flags.String("provisioning-uuid", "", "active provisioning profile UUID")
+	provisioningAddressText := flags.String("provisioning-address", "10.42.0.1", "provisioning AP IPv4 address")
+	yes := flags.Bool("yes", false, "confirm the disruptive checkpoint-backed Wi-Fi change")
+	jsonOutput := flags.Bool("json", false, "print JSON output")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(flags); err != nil {
+		return err
+	}
+	if !*yes {
+		return errors.New("protected connect changes the active Wi-Fi interface; repeat with --yes while captive-start provides the recovery path")
+	}
+	if *priority < -999 || *priority > 999 {
+		return errors.New("--priority must be between -999 and 999")
+	}
+	requirement := connectivity.Requirement(*requirementText)
+	if err := requirement.Validate(); err != nil {
+		return err
+	}
+	provisioningAddress, err := netip.ParseAddr(*provisioningAddressText)
+	if err != nil {
+		return fmt.Errorf("parse --provisioning-address: %w", err)
+	}
+	password, err := readPassword(*passwordFile, *open)
+	if err != nil {
+		return err
+	}
+
+	client, err := openClient()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	transition, err := recovery.NewInfrastructure(client)
+	if err != nil {
+		return err
+	}
+	activation, err := transition.Attempt(ctx, recovery.InfrastructureOptions{
+		Interface: *interfaceName,
+		Candidate: networkmanager.InfrastructureOptions{
+			ID:       *id,
+			SSID:     *ssid,
+			Password: password,
+			Open:     *open,
+			Hidden:   *hidden,
+			Priority: int32(*priority),
+		},
+		Requirement:             requirement,
+		ActivationWait:          *activationWait,
+		RollbackAfter:           *rollbackAfter,
+		RestorationWait:         *restorationWait,
+		ProvisioningUUID:        *provisioningUUID,
+		ProvisioningIPv4Address: provisioningAddress,
+	})
+	if err != nil {
+		return err
+	}
+	return writeActivation(stdout, activation, *jsonOutput)
+}
+
+func debugCaptiveStart(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("debug captive-start", stderr)
+	interfaceName := flags.String("interface", defaultInterface, "NetworkManager Wi-Fi interface")
+	ssid := flags.String("ssid", "", "provisioning access-point SSID")
+	passwordFile := flags.String("password-file", "", "file containing the access-point password")
+	addressText := flags.String("address", "10.42.0.1/24", "access-point IPv4 address and prefix")
+	band := flags.String("band", "bg", "Wi-Fi band: bg, a, or 6GHz")
+	wait := flags.Duration("wait", 30*time.Second, "maximum time to confirm AP activation")
+	httpPort := flags.Uint("http-port", 80, "captive HTTP port")
+	listenerHTTPPort := flags.Uint("listener-http-port", 18080, "private onboardd HTTP listener port")
+	portalURL := flags.String("portal-url", "", "canonical cleartext portal URL (defaults to the AP address)")
+	dnsConfigPath := flags.String(
+		"dns-config",
+		"/etc/NetworkManager/dnsmasq-shared.d/onboardd.conf",
+		"NetworkManager dnsmasq-shared fragment path",
+	)
+	yes := flags.Bool("yes", false, "confirm the disruptive Wi-Fi change")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(flags); err != nil {
+		return err
+	}
+	if !*yes {
+		return errors.New("starting captive provisioning changes the active Wi-Fi interface; repeat with --yes after ensuring a recovery path")
+	}
+	if *wait <= 0 {
+		return errors.New("--wait must be positive")
+	}
+	if *httpPort == 0 || *httpPort > 65535 {
+		return errors.New("--http-port must be between 1 and 65535")
+	}
+	if *listenerHTTPPort == 0 || *listenerHTTPPort > 65535 {
+		return errors.New("--listener-http-port must be between 1 and 65535")
+	}
+	if *httpPort == *listenerHTTPPort {
+		return errors.New("--http-port and --listener-http-port must differ")
+	}
+	address, err := netip.ParsePrefix(*addressText)
+	if err != nil {
+		return fmt.Errorf("parse --address: %w", err)
+	}
+	password, err := readRequiredPassword(*passwordFile)
+	if err != nil {
+		return err
+	}
+	canonicalURL := *portalURL
+	if canonicalURL == "" {
+		host := address.Addr().String()
+		if *httpPort != 80 {
+			host = net.JoinHostPort(host, fmt.Sprint(*httpPort))
+		}
+		canonicalURL = "http://" + host + "/"
+	}
+
+	dns, err := captive.NewDNSConfigFile(*dnsConfigPath)
+	if err != nil {
+		return err
+	}
+	client, err := openClient()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	redirect, err := captive.NewNFTRedirect("nft")
+	if err != nil {
+		return err
+	}
+	listenConfig := &net.ListenConfig{}
+	lifecycle, err := captive.NewLifecycle(client, dns, redirect, listenConfig.Listen)
+	if err != nil {
+		return err
+	}
+	portal := http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(
+			response,
+			"<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width\"></head>"+
+				"<body><main><h1>onboardd setup</h1><p>The Phase 3 captive portal is reachable.</p>"+
+				"</main></body></html>",
+		)
+	})
+	session, err := lifecycle.Start(ctx, captive.StartOptions{
+		Interface:        *interfaceName,
+		SSID:             *ssid,
+		Password:         password,
+		Address:          address,
+		Band:             *band,
+		Wait:             *wait,
+		PublicHTTPPort:   uint16(*httpPort),
+		ListenerHTTPPort: uint16(*listenerHTTPPort),
+		PortalURL:        canonicalURL,
+	}, portal)
+	if err != nil {
+		return err
+	}
+
+	activation := session.Activation()
+	fmt.Fprintln(stdout, "captive provisioning is ready")
+	fmt.Fprintf(stdout, "SSID: %s\n", *ssid)
+	fmt.Fprintf(stdout, "Portal: %s\n", session.PortalURL())
+	fmt.Fprintf(stdout, "UUID: %s\n", activation.UUID)
+	fmt.Fprintln(stdout, "Press Ctrl+C to stop and remove the temporary provisioning AP.")
+
+	var serveErr error
+	select {
+	case <-ctx.Done():
+	case <-session.Done():
+		serveErr = session.Wait()
+		if serveErr == nil {
+			serveErr = errors.New("captive HTTP listener stopped unexpectedly")
+		}
+	}
+	cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelCleanup()
+	stopErr := session.Stop(cleanupContext)
+	if serveErr != nil || stopErr != nil {
+		return errors.Join(serveErr, stopErr)
+	}
+	fmt.Fprintln(stdout, "captive provisioning stopped and temporary resources were removed")
+	return nil
 }
 
 func debugProfileDelete(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -298,7 +504,7 @@ func debugConnect(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if err != nil {
 		return err
 	}
-	if err := client.WaitForActivation(ctx, activation.ActivePath, *wait); err != nil {
+	if err := client.WaitForActivation(ctx, activation.ActivePath, *interfaceName, *wait); err != nil {
 		return fmt.Errorf("profile %s was created but activation failed: %w", activation.UUID, err)
 	}
 	if err := client.FinalizeTransition(
@@ -370,7 +576,7 @@ func debugAccessPoint(
 	if err != nil {
 		return err
 	}
-	if err := client.WaitForActivation(ctx, activation.ActivePath, *wait); err != nil {
+	if err := client.WaitForActivation(ctx, activation.ActivePath, *interfaceName, *wait); err != nil {
 		return fmt.Errorf("profile %s was created but activation failed: %w", activation.UUID, err)
 	}
 	if err := client.FinalizeTransition(ctx, *interfaceName, role, *ssid, activation.UUID); err != nil {
@@ -711,8 +917,10 @@ func printDebugHelp(writer io.Writer) {
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Disruptive commands (require --yes and a recovery path):")
 	fmt.Fprintln(writer, "  onboardd debug connect --ssid NAME (--password-file FILE | --open) --yes")
+	fmt.Fprintln(writer, "  onboardd debug connect-protected --ssid NAME --provisioning-uuid UUID --yes")
 	fmt.Fprintln(writer, "  onboardd debug provisioning-start --ssid NAME --password-file FILE --yes")
 	fmt.Fprintln(writer, "  onboardd debug standalone-start --ssid NAME --password-file FILE --yes")
+	fmt.Fprintln(writer, "  onboardd debug captive-start --ssid NAME --password-file FILE --yes")
 	fmt.Fprintln(writer, "  onboardd debug profile-delete --uuid UUID --yes")
 	fmt.Fprintln(writer, "  onboardd debug checkpoint-rollback --path OBJECT_PATH --yes")
 	fmt.Fprintln(writer)

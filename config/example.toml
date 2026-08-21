@@ -42,7 +42,9 @@ password_file = "/etc/onboardd/standalone-password"
 address = "10.42.0.1/24"
 
 [portal]
-hostname = "setup.local"
+hostname = "10.42.0.1"
+public_port = 80
+listener_port = 18080
 
 [handoff]
 enabled = true
@@ -58,4 +60,3 @@ timeout = "30s"
 enabled = false
 pin = 17
 hold_for = "5s"
-

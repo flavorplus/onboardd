@@ -49,9 +49,19 @@ Test whether checkpoints fully protect the profile and device transitions needed
 single-radio provisioning flow. Regardless of the API selected, failed transitions must
 restore an accessible AP.
 
+## Resolved during Phase 3
+
+### Captive DNS and HTTP plumbing
+
+Keep NetworkManager IPv4 shared mode for the Trixie baseline instead of launching a
+competing DHCP server. Isolate its current `dnsmasq-shared.d` wildcard-DNS hook behind
+`internal/captive`, redirect all non-portal cleartext HTTP requests consistently, and do
+not intercept HTTPS. Keep an appliance's existing port 80 service intact by listening on
+a private onboardd port and temporarily redirecting only provisioning-interface HTTP in
+the separately owned `inet onboardd_captive` nftables table.
+
 ## Resolve before the relevant later phase
 
-- Captive DNS/HTTP implementation and OS-specific probe routes: Phase 3.
 - TypeScript frontend framework or framework-free approach: Phase 4.
 - Exact environment-variable and CLI flag surface: Phase 5.
 - `.deb` ownership, capabilities, and service hardening: Phase 8.
