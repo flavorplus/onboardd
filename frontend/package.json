@@ -1,0 +1,18 @@
+{
+  "name": "onboardd-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:network-only": "vite --host 127.0.0.1 --mode network-only",
+    "dev:standalone-only": "vite --host 127.0.0.1 --mode standalone-only",
+    "build": "tsc --noEmit && vite build",
+    "test": "node --test src/*.test.ts dev/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "typescript": "7.0.2",
+    "vite": "8.2.1"
+  }
+}

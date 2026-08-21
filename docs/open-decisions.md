@@ -43,6 +43,13 @@ The accepted safety default is “observe/use, but do not delete or rewrite.” 
 tests must determine the precise precedence behavior when an unmanaged autoconnect
 profile competes with the selected managed standalone profile.
 
+Phase 4 hardware testing found that checkpoint rollback from a rejected standalone-to-
+infrastructure attempt can be followed by NetworkManager activating another valid,
+unmanaged autoconnect profile instead of the previous standalone UUID. The recovery
+contract is therefore stricter than “some connection became active”: onboardd must
+explicitly restore and confirm the exact previous profile. It must not solve this by
+silently disabling or deleting the competing unmanaged profile.
+
 ### NetworkManager checkpoint behavior
 
 Test whether checkpoints fully protect the profile and device transitions needed by our
@@ -60,8 +67,26 @@ not intercept HTTPS. Keep an appliance's existing port 80 service intact by list
 a private onboardd port and temporarily redirecting only provisioning-interface HTTP in
 the separately owned `inet onboardd_captive` nftables table.
 
+## Resolved during Phase 4
+
+### Frontend approach
+
+Use framework-free TypeScript, semantic HTML, and ordinary CSS. Vite supplies the local
+development and production build workflow, but no JavaScript application framework is
+shipped. The interface is intentionally small, dependency-light, and usable on captive
+mini-browsers. Phase 4 serves the built directory from the filesystem for development
+and hardware validation; Phase 5 embeds the compiled assets in the Go binary.
+
+### Captive-to-browser handoff
+
+Hardware testing confirmed that operating systems may close their captive mini-browser
+as soon as the provisioning AP disappears. A persistent follow-up experience therefore
+uses an explicit, user-activated link to open the stable mDNS setup address in a normal
+browser before the radio transition. Automatic `window.open()` is only a progressive
+enhancement, not a required path. Phase 6 implements the configurable hostname,
+discovery, application link, and standalone QR handoff.
+
 ## Resolve before the relevant later phase
 
-- TypeScript frontend framework or framework-free approach: Phase 4.
 - Exact environment-variable and CLI flag surface: Phase 5.
 - `.deb` ownership, capabilities, and service hardening: Phase 8.

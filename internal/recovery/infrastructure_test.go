@@ -92,6 +92,34 @@ func TestInfrastructureAttemptRollsBackAndConfirmsProvisioning(t *testing.T) {
 	}
 }
 
+func TestInfrastructureRollbackReactivatesExactPreviousProfile(t *testing.T) {
+	network := newFakeNetwork()
+	network.fail = "wait"
+	network.competingProfile = true
+	transition, err := NewInfrastructure(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	options := validOptions()
+	options.PreviousUUID = "standalone-uuid"
+	_, err = transition.Attempt(context.Background(), options)
+	if err == nil {
+		t.Fatal("Attempt() error = nil, want rejected candidate")
+	}
+	wantOrder := []string{
+		"checkpoint-rollback",
+		"delete:candidate-uuid",
+		"status",
+		"activate:standalone-uuid",
+		"restore-wait",
+		"status",
+	}
+	if !containsInOrder(network.calls, wantOrder) {
+		t.Fatalf("exact restoration order missing: calls = %#v, want subsequence %#v", network.calls, wantOrder)
+	}
+}
+
 func TestInfrastructureAttemptRejectsUnacceptableConnectivity(t *testing.T) {
 	network := newFakeNetwork()
 	network.connectivity = networkmanager.ConnectivityLimited
@@ -153,12 +181,12 @@ func validOptions() InfrastructureOptions {
 			SSID:     "Office",
 			Password: "test-password",
 		},
-		Requirement:             connectivity.RequirementLocal,
-		ActivationWait:          30 * time.Second,
-		RollbackAfter:           90 * time.Second,
-		RestorationWait:         time.Second,
-		ProvisioningUUID:        "provisioning-uuid",
-		ProvisioningIPv4Address: netip.MustParseAddr("10.42.0.1"),
+		Requirement:         connectivity.RequirementLocal,
+		ActivationWait:      30 * time.Second,
+		RollbackAfter:       90 * time.Second,
+		RestorationWait:     time.Second,
+		PreviousUUID:        "provisioning-uuid",
+		PreviousIPv4Address: netip.MustParseAddr("10.42.0.1"),
 	}
 }
 
@@ -171,12 +199,24 @@ func contains(calls []string, want string) bool {
 	return false
 }
 
+func containsInOrder(calls, want []string) bool {
+	next := 0
+	for _, call := range calls {
+		if next < len(want) && call == want[next] {
+			next++
+		}
+	}
+	return next == len(want)
+}
+
 type fakeNetwork struct {
-	calls        []string
-	fail         string
-	statusCalls  int
-	candidate    networkmanager.InfrastructureOptions
-	connectivity networkmanager.Connectivity
+	calls            []string
+	fail             string
+	statusCalls      int
+	candidate        networkmanager.InfrastructureOptions
+	connectivity     networkmanager.Connectivity
+	competingProfile bool
+	restoredUUID     string
 }
 
 func newFakeNetwork() *fakeNetwork {
@@ -208,6 +248,10 @@ func (network *fakeNetwork) ConnectInfrastructure(
 }
 
 func (network *fakeNetwork) WaitForActivation(context.Context, string, string, time.Duration) error {
+	if network.restoredUUID != "" {
+		network.calls = append(network.calls, "restore-wait")
+		return nil
+	}
 	network.calls = append(network.calls, "wait")
 	if network.fail == "wait" || network.fail == "rollback-after-wait" {
 		return errors.New("test failure")
@@ -222,6 +266,21 @@ func (network *fakeNetwork) Status(context.Context, string) (networkmanager.Stat
 		return networkmanager.Status{}, errors.New("test failure")
 	}
 	if contains(network.calls, "checkpoint-rollback") {
+		if network.competingProfile && network.restoredUUID == "" {
+			return networkmanager.Status{Device: networkmanager.Device{
+				State:         networkmanager.DeviceStateActivated,
+				ActiveUUID:    "foreign-uuid",
+				IPv4Addresses: []string{"192.168.1.30"},
+			}}, nil
+		}
+		if network.restoredUUID != "" {
+			return networkmanager.Status{Device: networkmanager.Device{
+				State:         networkmanager.DeviceStateActivated,
+				StateName:     "activated",
+				ActiveUUID:    network.restoredUUID,
+				IPv4Addresses: []string{"10.42.0.1"},
+			}}, nil
+		}
 		return provisioningStatus(), nil
 	}
 	return networkmanager.Status{
@@ -232,6 +291,19 @@ func (network *fakeNetwork) Status(context.Context, string) (networkmanager.Stat
 			ActiveUUID:    "candidate-uuid",
 			IPv4Addresses: []string{"192.168.1.20"},
 		},
+	}, nil
+}
+
+func (network *fakeNetwork) ActivateProfile(
+	_ context.Context,
+	_ string,
+	uuid string,
+) (networkmanager.Activation, error) {
+	network.calls = append(network.calls, "activate:"+uuid)
+	network.restoredUUID = uuid
+	return networkmanager.Activation{
+		UUID:       uuid,
+		ActivePath: "/org/freedesktop/NetworkManager/ActiveConnection/restored",
 	}, nil
 }
 

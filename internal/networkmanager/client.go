@@ -415,6 +415,52 @@ func (c *Client) ConnectInfrastructure(
 	)
 }
 
+// ActivateProfile explicitly activates an existing profile by UUID on the requested
+// interface. It does not modify the profile or require onboardd ownership; recovery may
+// need to restore the exact connection that was active before a transition.
+func (c *Client) ActivateProfile(
+	ctx context.Context,
+	interfaceName string,
+	uuid string,
+) (Activation, error) {
+	if !validUUID(uuid) {
+		return Activation{}, errors.New("UUID must use the canonical 8-4-4-4-12 format")
+	}
+	devicePath, err := c.devicePath(ctx, interfaceName)
+	if err != nil {
+		return Activation{}, err
+	}
+	var profilePath dbus.ObjectPath
+	if err := c.object(settingsPath).CallWithContext(
+		ctx,
+		settingsInterface+".GetConnectionByUuid",
+		0,
+		strings.ToLower(uuid),
+	).Store(&profilePath); err != nil {
+		return Activation{}, fmt.Errorf("find profile %s for activation: %w", uuid, err)
+	}
+	if !profilePath.IsValid() || profilePath == noSpecificObject {
+		return Activation{}, fmt.Errorf("NetworkManager returned invalid path %q for profile %s", profilePath, uuid)
+	}
+
+	var activePath dbus.ObjectPath
+	if err := c.object(managerPath).CallWithContext(
+		ctx,
+		managerInterface+".ActivateConnection",
+		0,
+		profilePath,
+		devicePath,
+		noSpecificObject,
+	).Store(&activePath); err != nil {
+		return Activation{}, fmt.Errorf("activate existing profile %s: %w", uuid, err)
+	}
+	return Activation{
+		ProfilePath: string(profilePath),
+		ActivePath:  string(activePath),
+		UUID:        strings.ToLower(uuid),
+	}, nil
+}
+
 // StartAccessPoint creates and activates a provisioning or standalone AP profile.
 func (c *Client) StartAccessPoint(
 	ctx context.Context,

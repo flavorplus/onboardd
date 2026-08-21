@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,8 +12,11 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -21,7 +25,9 @@ import (
 	"github.com/flavorplus/onboardd/internal/connectivity"
 	"github.com/flavorplus/onboardd/internal/networkmanager"
 	"github.com/flavorplus/onboardd/internal/recovery"
+	setupflow "github.com/flavorplus/onboardd/internal/setup"
 	stateengine "github.com/flavorplus/onboardd/internal/state"
+	webui "github.com/flavorplus/onboardd/internal/web"
 )
 
 const defaultInterface = "wlan0"
@@ -76,6 +82,8 @@ func runDebug(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 		return debugAccessPoint(ctx, args[1:], stdout, stderr, networkmanager.RoleStandalone)
 	case "captive-start":
 		return debugCaptiveStart(ctx, args[1:], stdout, stderr)
+	case "setup-start":
+		return debugSetupStart(ctx, args[1:], stdout, stderr)
 	case "connect-protected":
 		return debugConnectProtected(ctx, args[1:], stdout, stderr)
 	case "watch":
@@ -154,12 +162,12 @@ func debugConnectProtected(ctx context.Context, args []string, stdout, stderr io
 			Hidden:   *hidden,
 			Priority: int32(*priority),
 		},
-		Requirement:             requirement,
-		ActivationWait:          *activationWait,
-		RollbackAfter:           *rollbackAfter,
-		RestorationWait:         *restorationWait,
-		ProvisioningUUID:        *provisioningUUID,
-		ProvisioningIPv4Address: provisioningAddress,
+		Requirement:         requirement,
+		ActivationWait:      *activationWait,
+		RollbackAfter:       *rollbackAfter,
+		RestorationWait:     *restorationWait,
+		PreviousUUID:        *provisioningUUID,
+		PreviousIPv4Address: provisioningAddress,
 	})
 	if err != nil {
 		return err
@@ -288,6 +296,255 @@ func debugCaptiveStart(ctx context.Context, args []string, stdout, stderr io.Wri
 	}
 	fmt.Fprintln(stdout, "captive provisioning stopped and temporary resources were removed")
 	return nil
+}
+
+func debugSetupStart(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("debug setup-start", stderr)
+	interfaceName := flags.String("interface", defaultInterface, "NetworkManager Wi-Fi interface")
+	ssid := flags.String("ssid", "", "provisioning access-point SSID")
+	passwordFile := flags.String("password-file", "", "provisioning access-point password file")
+	addressText := flags.String("address", "10.42.0.1/24", "provisioning IPv4 address and prefix")
+	band := flags.String("band", "bg", "Wi-Fi band: bg, a, or 6GHz")
+	httpPort := flags.Uint("http-port", 80, "captive public HTTP port")
+	listenerHTTPPort := flags.Uint("listener-http-port", 18080, "private onboardd HTTP listener port")
+	portalURL := flags.String("portal-url", "", "canonical cleartext portal URL")
+	dnsConfigPath := flags.String(
+		"dns-config",
+		"/etc/NetworkManager/dnsmasq-shared.d/onboardd.conf",
+		"NetworkManager dnsmasq-shared fragment path",
+	)
+	frontendDirectory := flags.String("frontend-dir", "frontend/dist", "built frontend asset directory")
+	networkEnabled := flags.Bool("network-enabled", true, "offer connection to an existing Wi-Fi network")
+	standaloneEnabled := flags.Bool("standalone-enabled", true, "offer standalone mode")
+	standaloneSSID := flags.String("standalone-ssid", "", "standalone access-point SSID")
+	standalonePasswordFile := flags.String("standalone-password-file", "", "standalone access-point password file")
+	standaloneAddress := flags.String("standalone-address", "10.42.0.1/24", "standalone IPv4 address and prefix")
+	requirementText := flags.String("requirement", "local", "connectivity requirement: local or internet")
+	scanWait := flags.Duration("scan-wait", 5*time.Second, "maximum wait for a fresh Wi-Fi scan")
+	activationWait := flags.Duration("activation-wait", 30*time.Second, "maximum candidate activation wait")
+	rollbackAfter := flags.Duration("rollback-after", 90*time.Second, "automatic checkpoint rollback duration")
+	restorationWait := flags.Duration("restoration-wait", 30*time.Second, "maximum previous-connection restoration wait")
+	yes := flags.Bool("yes", false, "confirm the disruptive setup lifecycle")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(flags); err != nil {
+		return err
+	}
+	if !*yes {
+		return errors.New("starting setup changes the active Wi-Fi interface; repeat with --yes after ensuring a recovery path")
+	}
+	if !*networkEnabled && !*standaloneEnabled {
+		return errors.New("at least one of --network-enabled or --standalone-enabled must be true")
+	}
+	if *httpPort == 0 || *httpPort > 65535 || *listenerHTTPPort == 0 || *listenerHTTPPort > 65535 {
+		return errors.New("HTTP ports must be between 1 and 65535")
+	}
+	if *httpPort == *listenerHTTPPort {
+		return errors.New("--http-port and --listener-http-port must differ")
+	}
+	if *scanWait < 0 || *activationWait <= 0 || *restorationWait <= 0 {
+		return errors.New("scan wait cannot be negative and activation/restoration waits must be positive")
+	}
+	if *rollbackAfter <= 0 || *rollbackAfter%time.Second != 0 {
+		return errors.New("--rollback-after must be a positive whole number of seconds")
+	}
+	requirement := connectivity.Requirement(*requirementText)
+	if err := requirement.Validate(); err != nil {
+		return err
+	}
+	address, err := netip.ParsePrefix(*addressText)
+	if err != nil {
+		return fmt.Errorf("parse --address: %w", err)
+	}
+	portalPassword, err := readRequiredPassword(*passwordFile)
+	if err != nil {
+		return err
+	}
+	standalonePassword := ""
+	if *standaloneEnabled {
+		if *standaloneSSID == "" {
+			return errors.New("--standalone-ssid is required when standalone mode is enabled")
+		}
+		standalonePassword, err = readRequiredPassword(*standalonePasswordFile)
+		if err != nil {
+			return err
+		}
+	}
+	if err := validateBuiltFrontend(*frontendDirectory); err != nil {
+		return err
+	}
+	canonicalURL := *portalURL
+	if canonicalURL == "" {
+		host := address.Addr().String()
+		if *httpPort != 80 {
+			host = net.JoinHostPort(host, fmt.Sprint(*httpPort))
+		}
+		canonicalURL = "http://" + host + "/"
+	}
+	origin, err := portalOrigin(canonicalURL)
+	if err != nil {
+		return err
+	}
+
+	dns, err := captive.NewDNSConfigFile(*dnsConfigPath)
+	if err != nil {
+		return err
+	}
+	client, err := openClient()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	redirect, err := captive.NewNFTRedirect("nft")
+	if err != nil {
+		return err
+	}
+	listenConfig := &net.ListenConfig{}
+	lifecycle, err := captive.NewLifecycle(client, dns, redirect, listenConfig.Listen)
+	if err != nil {
+		return err
+	}
+	portal := &swappableHandler{}
+	session, err := lifecycle.Start(ctx, captive.StartOptions{
+		Interface:        *interfaceName,
+		SSID:             *ssid,
+		Password:         portalPassword,
+		Address:          address,
+		Band:             *band,
+		Wait:             *activationWait,
+		PublicHTTPPort:   uint16(*httpPort),
+		ListenerHTTPPort: uint16(*listenerHTTPPort),
+		PortalURL:        canonicalURL,
+	}, portal)
+	if err != nil {
+		return err
+	}
+	cleanupAfterError := func(cause error) error {
+		cleanupContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		return errors.Join(cause, session.Stop(cleanupContext))
+	}
+	infrastructureTransition, err := recovery.NewInfrastructure(client)
+	if err != nil {
+		return cleanupAfterError(err)
+	}
+	standaloneTransition, err := recovery.NewStandalone(client)
+	if err != nil {
+		return cleanupAfterError(err)
+	}
+	backend, err := setupflow.NewNetworkBackend(
+		client,
+		infrastructureTransition,
+		standaloneTransition,
+		session,
+		setupflow.NetworkOptions{
+			Interface:         *interfaceName,
+			Requirement:       requirement,
+			ScanWait:          *scanWait,
+			ActivationWait:    *activationWait,
+			RollbackAfter:     *rollbackAfter,
+			RestorationWait:   *restorationWait,
+			StandaloneEnabled: *standaloneEnabled,
+			Standalone: networkmanager.AccessPointOptions{
+				SSID:     *standaloneSSID,
+				Password: standalonePassword,
+				Address:  *standaloneAddress,
+				Band:     *band,
+				Priority: 999,
+			},
+		},
+	)
+	if err != nil {
+		return cleanupAfterError(err)
+	}
+	service, err := setupflow.NewService(ctx, backend, setupflow.Capabilities{
+		Network:    *networkEnabled,
+		Standalone: *standaloneEnabled,
+	})
+	if err != nil {
+		return cleanupAfterError(err)
+	}
+	api, err := webui.NewAPI(service, origin)
+	if err != nil {
+		return cleanupAfterError(err)
+	}
+	handler, err := webui.NewHandler(api, os.DirFS(*frontendDirectory))
+	if err != nil {
+		return cleanupAfterError(err)
+	}
+	portal.Set(handler)
+
+	activation := session.Activation()
+	fmt.Fprintln(stdout, "interactive setup is ready")
+	fmt.Fprintf(stdout, "SSID: %s\n", *ssid)
+	fmt.Fprintf(stdout, "Portal: %s\n", session.PortalURL())
+	fmt.Fprintf(stdout, "UUID: %s\n", activation.UUID)
+	fmt.Fprintln(stdout, "Press Ctrl+C to stop setup and remove temporary resources.")
+
+	var serveErr error
+	select {
+	case <-ctx.Done():
+	case <-session.Done():
+		serveErr = session.Wait()
+		if serveErr == nil {
+			serveErr = errors.New("setup HTTP listener stopped unexpectedly")
+		}
+	}
+	cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelCleanup()
+	stopErr := session.Stop(cleanupContext)
+	if serveErr != nil || stopErr != nil {
+		return errors.Join(serveErr, stopErr)
+	}
+	fmt.Fprintln(stdout, "interactive setup stopped and temporary resources were removed")
+	return nil
+}
+
+func validateBuiltFrontend(directory string) error {
+	indexPath := filepath.Join(directory, "index.html")
+	contents, err := os.ReadFile(indexPath)
+	if err != nil {
+		return fmt.Errorf("find built frontend index: %w", err)
+	}
+	if bytes.Contains(contents, []byte("/src/main.ts")) {
+		return fmt.Errorf(
+			"frontend directory %q contains Vite development source; use the compiled frontend/dist directory",
+			directory,
+		)
+	}
+	return nil
+}
+
+func portalOrigin(value string) (string, error) {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("portal URL must be an absolute URL")
+	}
+	return parsed.Scheme + "://" + parsed.Host, nil
+}
+
+type swappableHandler struct {
+	mu      sync.RWMutex
+	handler http.Handler
+}
+
+func (handler *swappableHandler) Set(next http.Handler) {
+	handler.mu.Lock()
+	handler.handler = next
+	handler.mu.Unlock()
+}
+
+func (handler *swappableHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	handler.mu.RLock()
+	current := handler.handler
+	handler.mu.RUnlock()
+	if current == nil {
+		response.Header().Set("Cache-Control", "no-store")
+		http.Error(response, "Setup is starting. Try again in a moment.", http.StatusServiceUnavailable)
+		return
+	}
+	current.ServeHTTP(response, request)
 }
 
 func debugProfileDelete(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -921,6 +1178,7 @@ func printDebugHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  onboardd debug provisioning-start --ssid NAME --password-file FILE --yes")
 	fmt.Fprintln(writer, "  onboardd debug standalone-start --ssid NAME --password-file FILE --yes")
 	fmt.Fprintln(writer, "  onboardd debug captive-start --ssid NAME --password-file FILE --yes")
+	fmt.Fprintln(writer, "  onboardd debug setup-start --ssid NAME --password-file FILE --frontend-dir DIR --yes")
 	fmt.Fprintln(writer, "  onboardd debug profile-delete --uuid UUID --yes")
 	fmt.Fprintln(writer, "  onboardd debug checkpoint-rollback --path OBJECT_PATH --yes")
 	fmt.Fprintln(writer)

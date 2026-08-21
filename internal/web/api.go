@@ -1,0 +1,366 @@
+// Package web provides the product-facing setup HTTP API.
+package web
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/flavorplus/onboardd/internal/setup"
+)
+
+const (
+	apiBodyLimit = 4096
+	csrfHeader   = "X-Onboardd-CSRF"
+)
+
+type setupService interface {
+	Bootstrap(context.Context) (setup.Bootstrap, error)
+	Networks(context.Context) ([]setup.Network, error)
+	StartConnection(setup.ConnectionRequest) (setup.Operation, error)
+	StartStandalone() (setup.Operation, error)
+	BeginOperation(string) bool
+	Operation(string) (setup.Operation, bool)
+}
+
+// API is the versioned setup JSON surface.
+type API struct {
+	service         setupService
+	canonicalOrigin string
+	csrfToken       string
+	mux             *http.ServeMux
+}
+
+// NewAPI validates the portal origin and creates an isolated v1 handler.
+func NewAPI(service setupService, canonicalOrigin string) (*API, error) {
+	if service == nil {
+		return nil, errors.New("setup service is required")
+	}
+	origin, err := normalizeOrigin(canonicalOrigin)
+	if err != nil {
+		return nil, err
+	}
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return nil, fmt.Errorf("generate setup CSRF token: %w", err)
+	}
+	api := &API{
+		service:         service,
+		canonicalOrigin: origin,
+		csrfToken:       hex.EncodeToString(tokenBytes),
+		mux:             http.NewServeMux(),
+	}
+	api.mux.HandleFunc("GET /api/v1/setup", api.getSetup)
+	api.mux.HandleFunc("GET /api/v1/networks", api.getNetworks)
+	api.mux.HandleFunc("POST /api/v1/connections", api.postConnection)
+	api.mux.HandleFunc("POST /api/v1/standalone", api.postStandalone)
+	api.mux.HandleFunc("GET /api/v1/operations/{id}", api.getOperation)
+	api.mux.HandleFunc("/api/", api.notFound)
+	return api, nil
+}
+
+func (api *API) notFound(response http.ResponseWriter, _ *http.Request) {
+	writeError(response, http.StatusNotFound, setup.Failure{
+		Code:    "api_not_found",
+		Message: "This setup API route does not exist.",
+	})
+}
+
+// ServeHTTP applies response security policy to every API route.
+func (api *API) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.Header().Set("Referrer-Policy", "no-referrer")
+	api.mux.ServeHTTP(response, request)
+}
+
+type setupResponse struct {
+	setup.Bootstrap
+	CSRFToken string `json:"csrf_token"`
+}
+
+func (api *API) getSetup(response http.ResponseWriter, request *http.Request) {
+	bootstrap, err := api.service.Bootstrap(request.Context())
+	if err != nil {
+		writeInternalError(response)
+		return
+	}
+	writeJSON(response, http.StatusOK, setupResponse{
+		Bootstrap: bootstrap,
+		CSRFToken: api.csrfToken,
+	})
+}
+
+func (api *API) getNetworks(response http.ResponseWriter, request *http.Request) {
+	networks, err := api.service.Networks(request.Context())
+	if err != nil {
+		writeServiceError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, struct {
+		Networks []setup.Network `json:"networks"`
+	}{Networks: networks})
+}
+
+type connectionPayload struct {
+	SSID     string `json:"ssid"`
+	Password string `json:"password"`
+	Open     bool   `json:"open"`
+	Hidden   bool   `json:"hidden"`
+}
+
+func (api *API) postConnection(response http.ResponseWriter, request *http.Request) {
+	if !api.allowMutation(response, request) {
+		return
+	}
+	var payload connectionPayload
+	if !decodeJSON(response, request, &payload) {
+		return
+	}
+	if failure := validateConnectionPayload(payload); failure != nil {
+		writeError(response, http.StatusBadRequest, *failure)
+		return
+	}
+	operation, err := api.service.StartConnection(setup.ConnectionRequest{
+		SSID:     payload.SSID,
+		Password: payload.Password,
+		Open:     payload.Open,
+		Hidden:   payload.Hidden,
+	})
+	if err != nil {
+		writeServiceError(response, err)
+		return
+	}
+	api.acceptOperation(response, operation)
+	api.service.BeginOperation(operation.ID)
+}
+
+func (api *API) acceptOperation(response http.ResponseWriter, operation setup.Operation) {
+	writeJSON(response, http.StatusAccepted, struct {
+		Operation setup.Operation `json:"operation"`
+	}{Operation: operation})
+	_ = http.NewResponseController(response).Flush()
+}
+
+type standalonePayload struct {
+	Confirm bool `json:"confirm"`
+}
+
+func (api *API) postStandalone(response http.ResponseWriter, request *http.Request) {
+	if !api.allowMutation(response, request) {
+		return
+	}
+	var payload standalonePayload
+	if !decodeJSON(response, request, &payload) {
+		return
+	}
+	if !payload.Confirm {
+		writeError(response, http.StatusBadRequest, setup.Failure{
+			Code:    "confirmation_required",
+			Message: "Confirm standalone mode before continuing.",
+		})
+		return
+	}
+	operation, err := api.service.StartStandalone()
+	if err != nil {
+		writeServiceError(response, err)
+		return
+	}
+	api.acceptOperation(response, operation)
+	api.service.BeginOperation(operation.ID)
+}
+
+func (api *API) getOperation(response http.ResponseWriter, request *http.Request) {
+	id := request.PathValue("id")
+	operation, ok := api.service.Operation(id)
+	if !ok {
+		writeError(response, http.StatusNotFound, setup.Failure{
+			Code:    "operation_not_found",
+			Message: "This setup operation is no longer available.",
+		})
+		return
+	}
+	writeJSON(response, http.StatusOK, struct {
+		Operation setup.Operation `json:"operation"`
+	}{Operation: operation})
+}
+
+func (api *API) allowMutation(response http.ResponseWriter, request *http.Request) bool {
+	provided := request.Header.Get(csrfHeader)
+	if len(provided) != len(api.csrfToken) || subtle.ConstantTimeCompare(
+		[]byte(provided),
+		[]byte(api.csrfToken),
+	) != 1 {
+		writeError(response, http.StatusForbidden, setup.Failure{
+			Code:    "request_not_allowed",
+			Message: "Refresh the setup page and try again.",
+		})
+		return false
+	}
+	if origin := request.Header.Get("Origin"); origin != "" {
+		normalized, err := normalizeOrigin(origin)
+		if err != nil || (normalized != api.canonicalOrigin && normalized != requestOrigin(request)) {
+			writeError(response, http.StatusForbidden, setup.Failure{
+				Code:    "request_not_allowed",
+				Message: "Refresh the setup page and try again.",
+			})
+			return false
+		}
+	}
+	return true
+}
+
+func requestOrigin(request *http.Request) string {
+	scheme := "http"
+	if request.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + strings.ToLower(request.Host)
+}
+
+func decodeJSON(response http.ResponseWriter, request *http.Request, destination any) bool {
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		writeError(response, http.StatusUnsupportedMediaType, setup.Failure{
+			Code:    "json_required",
+			Message: "The request must use JSON.",
+		})
+		return false
+	}
+	request.Body = http.MaxBytesReader(response, request.Body, apiBodyLimit)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(response, http.StatusRequestEntityTooLarge, setup.Failure{
+				Code:    "request_too_large",
+				Message: "The request is too large.",
+			})
+			return false
+		}
+		writeInvalidJSON(response)
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeInvalidJSON(response)
+		return false
+	}
+	return true
+}
+
+func validateConnectionPayload(payload connectionPayload) *setup.Failure {
+	ssidLength := len([]byte(payload.SSID))
+	if ssidLength == 0 || ssidLength > 32 {
+		return &setup.Failure{
+			Code:    "invalid_network_name",
+			Message: "Enter a Wi-Fi network name between 1 and 32 characters.",
+		}
+	}
+	if payload.Open {
+		if payload.Password != "" {
+			return &setup.Failure{
+				Code:    "unexpected_password",
+				Message: "An open network does not use a password.",
+			}
+		}
+		return nil
+	}
+	if !validPSK(payload.Password) {
+		return &setup.Failure{
+			Code:    "invalid_password",
+			Message: "Enter a Wi-Fi password between 8 and 63 characters.",
+		}
+	}
+	return nil
+}
+
+func validPSK(password string) bool {
+	length := len(password)
+	if length >= 8 && length <= 63 {
+		return true
+	}
+	if length != 64 {
+		return false
+	}
+	for _, character := range password {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", character) {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeOrigin(value string) (string, error) {
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", errors.New("canonical origin must be an absolute HTTP URL")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		(parsed.Path != "" && parsed.Path != "/") {
+		return "", errors.New("canonical origin must not include credentials, path, query, or fragment")
+	}
+	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host), nil
+}
+
+func writeServiceError(response http.ResponseWriter, err error) {
+	var conflict *setup.ConflictError
+	if errors.As(err, &conflict) {
+		writeJSON(response, http.StatusConflict, struct {
+			Error     setup.Failure   `json:"error"`
+			Operation setup.Operation `json:"operation"`
+		}{
+			Error: setup.Failure{
+				Code:    "operation_in_progress",
+				Message: "Another network change is already in progress.",
+			},
+			Operation: conflict.Operation,
+		})
+		return
+	}
+	var public *setup.PublicError
+	if errors.As(err, &public) {
+		status := http.StatusBadRequest
+		if public.Failure.Code == "mode_unavailable" {
+			status = http.StatusForbidden
+		}
+		writeError(response, status, public.Failure)
+		return
+	}
+	writeInternalError(response)
+}
+
+func writeInvalidJSON(response http.ResponseWriter) {
+	writeError(response, http.StatusBadRequest, setup.Failure{
+		Code:    "invalid_json",
+		Message: "The request could not be understood.",
+	})
+}
+
+func writeInternalError(response http.ResponseWriter) {
+	writeError(response, http.StatusInternalServerError, setup.Failure{
+		Code:    "internal_failure",
+		Message: "Setup is temporarily unavailable. Please try again.",
+	})
+}
+
+func writeError(response http.ResponseWriter, status int, failure setup.Failure) {
+	writeJSON(response, status, struct {
+		Error setup.Failure `json:"error"`
+	}{Error: failure})
+}
+
+func writeJSON(response http.ResponseWriter, status int, value any) {
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.WriteHeader(status)
+	_ = json.NewEncoder(response).Encode(value)
+}

@@ -18,6 +18,10 @@
   "[toml]": {
     "editor.defaultFormatter": "tamasfe.even-better-toml"
   },
+  "[typescript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "typescript.tsdk": "frontend/node_modules/typescript/lib",
   "markdownlint.config": {
     "MD013": false
   },

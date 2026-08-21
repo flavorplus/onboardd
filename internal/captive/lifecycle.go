@@ -77,7 +77,7 @@ func (lifecycle *Lifecycle) Start(
 	if err := validateStartOptions(options); err != nil {
 		return nil, err
 	}
-	handler, err := NewHTTPHandler(options.PortalURL, portal)
+	handler, err := NewHTTPHandler(options.PortalURL, options.ListenerHTTPPort, portal)
 	if err != nil {
 		return nil, err
 	}

@@ -179,13 +179,24 @@ permanently inaccessible.
 
 ## Application handoff
 
-Handoff is configured rather than product-specific. Standalone mode can immediately
-open the application because the client remains on the same AP. Infrastructure mode
-requires the client to join the same network and rediscover the appliance, normally
-through an mDNS hostname.
+Handoff is configured rather than product-specific. Before selecting a disruptive mode,
+the captive page offers a user-activated link that opens the setup service at a stable
+mDNS hostname and private listener port in a normal browser. The browser then keeps one
+origin while the hostname resolves to the provisioning, standalone, or infrastructure
+address on the current link. The service retains operation history in memory so polling
+can resume after the radio interruption.
+
+Standalone mode can lead directly to the application after the client joins the final
+AP. Products with a physical display may additionally show separate QR codes for joining
+the standalone Wi-Fi and opening the configured application/setup URL. Infrastructure
+mode requires the client to join the same network and rediscover the appliance through
+the mDNS hostname. A manual address remains available as a fallback.
 
 The captive browser may close automatically when Internet connectivity returns, so the
 handoff flow must remain understandable even if the original portal page disappears.
+The design does not depend on an automatic popup: opening a new browsing context can be
+blocked without immediate user activation, and captive assistants may impose additional
+restrictions.
 
 ## Security boundaries
 

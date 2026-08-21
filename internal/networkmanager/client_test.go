@@ -97,6 +97,13 @@ func TestFinalizeTransitionRejectsUnknownRole(t *testing.T) {
 	}
 }
 
+func TestActivateProfileRejectsInvalidUUIDBeforeDBus(t *testing.T) {
+	client := &Client{}
+	if _, err := client.ActivateProfile(context.Background(), "wlan0", "not-a-uuid"); err == nil {
+		t.Fatal("invalid UUID unexpectedly reached D-Bus activation")
+	}
+}
+
 func TestSettingsFromCallBodyPreservesVariantSignature(t *testing.T) {
 	legacyAddresses := dbus.MakeVariantWithSignature(
 		[]any{},

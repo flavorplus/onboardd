@@ -119,6 +119,9 @@ Acceptance evidence:
 
 ## Phase 4 — Setup API and web interface
 
+Status: complete. Accepted on 2026-08-21 on Raspberry Pi Zero 2 W with Raspberry Pi OS
+Trixie.
+
 Implement the HTTP API and a small TypeScript frontend covering mode choice, Wi-Fi
 selection, hidden networks, connection progress, failure, standalone confirmation,
 completion, and later mode changes.
@@ -126,7 +129,37 @@ completion, and later mode changes.
 Exit criterion: a nontechnical user can complete either allowed setup path without
 seeing NetworkManager terminology.
 
+Implementation checklist:
+
+- [x] Versioned setup/status and Wi-Fi scan API.
+- [x] Asynchronous, single-flight network operations that survive browser disconnects.
+- [x] Protected infrastructure transition and recoverable user-facing errors.
+- [x] Standalone confirmation and persistent mode selection.
+- [x] Framework-free TypeScript interface for every setup state.
+- [x] Request validation, body limits, no-store responses, and CSRF/origin protection.
+- [x] Deterministic Go API/controller tests and frontend tests.
+- [x] Failed changes from standalone restore the exact previous standalone profile even
+      when an unmanaged infrastructure profile is also eligible for autoconnect.
+- [x] Raspberry Pi end-to-end browser acceptance for both operating modes.
+
+Acceptance evidence:
+
+- The captive and normal-browser interfaces exposed both product modes without backend
+  terminology and handled visible, open, protected, and hidden network paths.
+- Wrong credentials restored setup and retained a safe retry result across browser
+  reconnection; correct credentials completed infrastructure mode.
+- Standalone remained reachable through the retained listener, and later mode changes
+  worked in both directions.
+- Exact-profile rollback restored standalone despite a competing unmanaged autoconnect
+  profile without modifying that profile.
+- Network-only and standalone-only policies removed the disallowed UI and API paths;
+  disabling both modes was rejected before changing the network.
+- Clean shutdown removed temporary HTTP, DNS, nftables, and provisioning resources while
+  leaving the selected production profile durable.
+
 ## Phase 5 — Branding and configuration
+
+Status: current implementation boundary.
 
 Implement TOML loading, environment/CLI overrides, schema/runtime validation, safe
 templates, custom text, colors, logos, SSIDs, and product identity. Embed the compiled
@@ -137,17 +170,30 @@ forking or rebuilding the frontend.
 
 ## Phase 6 — Application handoff
 
-Implement configurable labels and URLs, optional health checks, mDNS discovery,
-standalone immediate handoff, and infrastructure-network transition guidance.
+Implement configurable labels and URLs, optional health checks, and mDNS discovery.
+Before a disruptive radio change, offer an explicit user-activated handoff from the
+captive assistant to the stable `http://DEVICE.local:LISTENER_PORT/` setup origin in a
+normal browser. Keep polling and operation history available at that origin across
+provisioning, standalone, and infrastructure addresses. Automatic popup attempts are
+not the primary path because clients may block them or close the captive assistant.
+
+Add standalone handoff information suitable for a product display, including a Wi-Fi
+join QR code and an application/setup URL QR code when product policy permits displaying
+the standalone credential. Provide a manual URL fallback for clients without usable
+mDNS and transition guidance for infrastructure mode.
 
 Exit criterion: setup can reliably lead the user to a configured local application in
-both production modes.
+both production modes, and closing the captive assistant does not discard observable
+operation progress.
 
 ## Phase 7 — Recovery and appliance reliability
 
 Add transactional transitions/checkpoints, retry policies, optional GPIO recovery,
 manual setup activation, boot reconciliation hardening, watchdog behavior, log
-redaction, and power-loss testing.
+redaction, and power-loss testing. Add a product-facing **Known networks** view that can
+forget onboardd-owned infrastructure profiles. Unmanaged/system profiles remain
+read-only by default; deleting or adopting them requires an explicit future policy and
+must never happen as an automatic recovery side effect.
 
 Exit criterion: common failures and interrupted transitions cannot leave the appliance
 permanently inaccessible.

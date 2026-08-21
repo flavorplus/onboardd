@@ -64,14 +64,16 @@ func (server *HTTPServer) Wait() error {
 }
 
 // Shutdown gracefully stops the listener and waits for its serving goroutine.
+// If a client keeps a request active until the caller's deadline, it force-closes
+// the remaining connections so shutdown can still complete deterministically.
 func (server *HTTPServer) Shutdown(ctx context.Context) error {
 	if err := server.server.Shutdown(ctx); err != nil {
-		return err
+		if ctx.Err() == nil || !errors.Is(err, ctx.Err()) {
+			return err
+		}
+		if closeErr := server.server.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
+			return errors.Join(err, closeErr)
+		}
 	}
-	select {
-	case <-server.done:
-		return server.Wait()
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return server.Wait()
 }

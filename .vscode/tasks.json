@@ -57,12 +57,78 @@
       "problemMatcher": []
     },
     {
+      "label": "Frontend: install",
+      "type": "process",
+      "command": "npm",
+      "args": ["install"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: dev",
+      "type": "process",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: dev (Wi-Fi only)",
+      "type": "process",
+      "command": "npm",
+      "args": ["run", "dev:network-only"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: dev (standalone only)",
+      "type": "process",
+      "command": "npm",
+      "args": ["run", "dev:standalone-only"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: test",
+      "type": "process",
+      "command": "npm",
+      "args": ["test"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: build",
+      "type": "process",
+      "command": "npm",
+      "args": ["run", "build"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Check: all",
       "dependsOrder": "sequence",
       "dependsOn": [
         "Go: format all",
         "Go: test all",
         "Go: vet all",
+        "Frontend: test",
+        "Frontend: build",
         "Go: build onboardd",
         "Go: build Pi Zero 2 W"
       ],

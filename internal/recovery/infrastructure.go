@@ -15,6 +15,7 @@ import (
 type networkManager interface {
 	CreateCheckpoint(context.Context, string, time.Duration) (networkmanager.Checkpoint, error)
 	ConnectInfrastructure(context.Context, networkmanager.InfrastructureOptions) (networkmanager.Activation, error)
+	ActivateProfile(context.Context, string, string) (networkmanager.Activation, error)
 	WaitForActivation(context.Context, string, string, time.Duration) error
 	Status(context.Context, string) (networkmanager.Status, error)
 	CheckConnectivity(context.Context) (networkmanager.Connectivity, error)
@@ -24,17 +25,17 @@ type networkManager interface {
 	DeleteOwnedProfile(context.Context, string) error
 }
 
-// InfrastructureOptions describes a candidate connection and the provisioning AP that
-// must be restored if the candidate is rejected.
+// InfrastructureOptions describes a candidate connection and the active connection
+// that must be restored if the candidate is rejected.
 type InfrastructureOptions struct {
-	Interface               string
-	Candidate               networkmanager.InfrastructureOptions
-	Requirement             connectivity.Requirement
-	ActivationWait          time.Duration
-	RollbackAfter           time.Duration
-	RestorationWait         time.Duration
-	ProvisioningUUID        string
-	ProvisioningIPv4Address netip.Addr
+	Interface           string
+	Candidate           networkmanager.InfrastructureOptions
+	Requirement         connectivity.Requirement
+	ActivationWait      time.Duration
+	RollbackAfter       time.Duration
+	RestorationWait     time.Duration
+	PreviousUUID        string
+	PreviousIPv4Address netip.Addr
 }
 
 // Infrastructure manages checkpoint-backed transitions away from provisioning.
@@ -141,33 +142,27 @@ func (transition *Infrastructure) rollback(
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("remove rejected infrastructure profile: %w", err))
 		}
 	}
-	if err := transition.waitForProvisioning(cleanupContext, options); err != nil {
+	if err := transition.waitForPreviousConnection(cleanupContext, options); err != nil {
 		cleanupErrors = append(cleanupErrors, err)
 	}
 	return errors.Join(cause, errors.Join(cleanupErrors...))
 }
 
-func (transition *Infrastructure) waitForProvisioning(
+func (transition *Infrastructure) waitForPreviousConnection(
 	ctx context.Context,
 	options InfrastructureOptions,
 ) error {
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		status, err := transition.network.Status(ctx, options.Interface)
-		if err == nil && provisioningRestored(
-			status,
-			options.ProvisioningUUID,
-			options.ProvisioningIPv4Address,
-		) {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("confirm provisioning restoration: %w", ctx.Err())
-		case <-ticker.C:
-		}
+	if err := restorePreviousConnection(
+		ctx,
+		transition.network,
+		options.Interface,
+		options.PreviousUUID,
+		options.PreviousIPv4Address,
+		options.RestorationWait,
+	); err != nil {
+		return fmt.Errorf("confirm previous connection restoration: %w", err)
 	}
+	return nil
 }
 
 func validateInfrastructureOptions(options InfrastructureOptions) error {
@@ -186,31 +181,14 @@ func validateInfrastructureOptions(options InfrastructureOptions) error {
 	if options.RestorationWait <= 0 {
 		return errors.New("provisioning restoration wait must be positive")
 	}
-	if options.ProvisioningUUID == "" {
-		return errors.New("provisioning profile UUID is required")
+	if options.PreviousUUID == "" {
+		return errors.New("previous profile UUID is required")
 	}
-	address := options.ProvisioningIPv4Address
+	address := options.PreviousIPv4Address
 	if !address.IsValid() || !address.Is4() || address.IsUnspecified() || address.IsMulticast() {
-		return errors.New("provisioning IPv4 address must be usable")
+		return errors.New("previous IPv4 address must be usable")
 	}
 	return nil
-}
-
-func provisioningRestored(
-	status networkmanager.Status,
-	uuid string,
-	address netip.Addr,
-) bool {
-	if status.Device.State != networkmanager.DeviceStateActivated || status.Device.ActiveUUID != uuid {
-		return false
-	}
-	for _, candidate := range status.Device.IPv4Addresses {
-		parsed, err := netip.ParseAddr(candidate)
-		if err == nil && parsed == address {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeConnectivity(value networkmanager.Connectivity) connectivity.InternetState {

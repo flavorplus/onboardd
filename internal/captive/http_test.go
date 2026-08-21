@@ -12,7 +12,7 @@ func TestHTTPHandlerRedirectsCaptiveProbeRequests(t *testing.T) {
 	portal := http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		t.Fatal("probe request unexpectedly reached portal handler")
 	})
-	handler, err := NewHTTPHandler("http://setup.local/", portal)
+	handler, err := NewHTTPHandler("http://setup.local/", 18080, portal)
 	if err != nil {
 		t.Fatalf("NewHTTPHandler() error = %v", err)
 	}
@@ -60,7 +60,7 @@ func TestHTTPHandlerDelegatesCanonicalPortalHost(t *testing.T) {
 		response.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(response, "setup")
 	})
-	handler, err := NewHTTPHandler("http://Setup.Local:80/", portal)
+	handler, err := NewHTTPHandler("http://Setup.Local:80/", 18080, portal)
 	if err != nil {
 		t.Fatalf("NewHTTPHandler() error = %v", err)
 	}
@@ -78,6 +78,33 @@ func TestHTTPHandlerDelegatesCanonicalPortalHost(t *testing.T) {
 	assertNoCacheHeaders(t, response.Header())
 }
 
+func TestHTTPHandlerDelegatesDirectListenerAddresses(t *testing.T) {
+	portal := http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(response, "setup")
+	})
+	handler, err := NewHTTPHandler("http://10.42.0.1/", 18080, portal)
+	if err != nil {
+		t.Fatalf("NewHTTPHandler() error = %v", err)
+	}
+
+	for _, address := range []string{
+		"http://10.42.0.1:18080/",
+		"http://192.0.2.10:18080/",
+	} {
+		t.Run(address, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, address, nil)
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK || response.Body.String() != "setup" {
+				t.Fatalf("direct response = status %d body %q", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestNewHTTPHandlerValidatesConfiguration(t *testing.T) {
 	portal := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	tests := []struct {
@@ -87,6 +114,7 @@ func TestNewHTTPHandlerValidatesConfiguration(t *testing.T) {
 		want      string
 	}{
 		{name: "missing handler", portalURL: "http://setup.local/", want: "portal handler is required"},
+		{name: "missing listener port", portalURL: "http://setup.local/", portal: portal, want: "listener port is required"},
 		{name: "relative URL", portalURL: "/setup", portal: portal, want: "scheme must be http"},
 		{name: "HTTPS interception", portalURL: "https://setup.local/", portal: portal, want: "scheme must be http"},
 		{name: "missing host", portalURL: "http:///setup", portal: portal, want: "must include a host"},
@@ -96,7 +124,11 @@ func TestNewHTTPHandlerValidatesConfiguration(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := NewHTTPHandler(test.portalURL, test.portal)
+			listenerPort := uint16(18080)
+			if test.name == "missing listener port" {
+				listenerPort = 0
+			}
+			_, err := NewHTTPHandler(test.portalURL, listenerPort, test.portal)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("NewHTTPHandler() error = %v, want containing %q", err, test.want)
 			}
@@ -107,6 +139,7 @@ func TestNewHTTPHandlerValidatesConfiguration(t *testing.T) {
 func TestHTTPHandlerPreservesHEADSemantics(t *testing.T) {
 	handler, err := NewHTTPHandler(
 		"http://setup.local/",
+		18080,
 		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
 	)
 	if err != nil {

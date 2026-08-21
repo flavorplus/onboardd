@@ -19,7 +19,7 @@ func TestStartHTTPServerServesAndShutsDown(t *testing.T) {
 	portal := http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(response, "setup")
 	})
-	handler, err := NewHTTPHandler("http://10.42.0.1/", portal)
+	handler, err := NewHTTPHandler("http://10.42.0.1/", 18080, portal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +66,51 @@ func TestStartHTTPServerServesAndShutsDown(t *testing.T) {
 	}
 	if err := server.Wait(); err != nil {
 		t.Fatalf("Wait() error = %v", err)
+	}
+}
+
+func TestHTTPServerForceClosesActiveRequestAfterGracefulShutdownExpires(t *testing.T) {
+	listener := newMemoryListener()
+	requestStarted := make(chan struct{})
+	requestStopped := make(chan struct{})
+	server, err := StartHTTPServer(listener, http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		close(requestStarted)
+		<-request.Context().Done()
+		close(requestStopped)
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	serverConnection, clientConnection := net.Pipe()
+	defer clientConnection.Close()
+	listener.connections <- serverConnection
+	go func() {
+		_, _ = fmt.Fprint(
+			clientConnection,
+			"GET / HTTP/1.1\r\nHost: 10.42.0.1\r\n\r\n",
+		)
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("request did not reach handler")
+	}
+
+	shutdownContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := server.Shutdown(shutdownContext); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+	select {
+	case <-requestStopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("active request remains open after forced shutdown")
+	}
+	select {
+	case <-server.Done():
+	default:
+		t.Fatal("Done() remains open after forced shutdown")
 	}
 }
 

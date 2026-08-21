@@ -10,8 +10,8 @@ of the core daemon.
 
 ## Project status
 
-The project is being developed one phase at a time. **Phases 0 through 3 are complete.**
-Phase 4 is the current implementation boundary.
+The project is being developed one phase at a time. **Phases 0 through 4 are complete.**
+Phase 5 is the current implementation boundary.
 
 | Phase | Deliverable | Status |
 |---|---|---|
@@ -19,8 +19,8 @@ Phase 4 is the current implementation boundary.
 | 1 | NetworkManager D-Bus proof of concept | Complete |
 | 2 | Core reconciliation and transient state engine | Complete |
 | 3 | Temporary AP and captive portal plumbing | Complete |
-| 4 | Setup API and web interface | Not started |
-| 5 | Branding and configuration | Not started |
+| 4 | Setup API and web interface | Complete |
+| 5 | Branding and configuration | In progress |
 | 6 | Application handoff | Not started |
 | 7 | Recovery and appliance reliability | Not started |
 | 8 | Packaging and installation | Not started |
@@ -65,6 +65,8 @@ go run ./cmd/onboardd --version
 ```
 
 See [Development](docs/development.md) for the editor workflow and repository layout.
+The development workflow also includes a Mac-safe simulated device for iterating on the
+complete portal without transferring a build or changing the Mac's network.
 
 ## Configuration preview
 
@@ -91,6 +93,7 @@ onboardd debug connect
 onboardd debug provisioning-start
 onboardd debug standalone-start
 onboardd debug captive-start
+onboardd debug setup-start
 onboardd debug connect-protected
 onboardd debug checkpoint-create
 onboardd debug checkpoint-commit
@@ -112,3 +115,8 @@ interrupted so cleanup can remove the temporary profile, redirect, and DNS fragm
 `connect-protected` is the matching recovery diagnostic. It creates a NetworkManager
 checkpoint before trying infrastructure and confirms that the active provisioning UUID
 and address return after any rejected attempt.
+
+Phase 4's `setup-start` diagnostic adds the versioned setup API and compiled TypeScript
+interface. It serves `frontend/dist` during development, keeps network changes alive
+across browser disconnects, and supports protected infrastructure and standalone mode
+selection from the same product-facing flow.
