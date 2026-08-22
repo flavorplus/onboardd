@@ -41,7 +41,8 @@ Scope:
 - exercise autoconnect priorities and reboot behavior;
 - evaluate NetworkManager checkpoints.
 
-Developer-facing commands:
+Historical Phase 1 proof commands, retired after the configured setup flow replaced
+them:
 
 ```text
 onboardd debug status

@@ -7,8 +7,8 @@ Trixie.
 
 Phase 4 turns the Phase 3 captive network into a complete product-neutral setup
 experience. It owns the versioned HTTP API, in-memory setup operations, and browser
-interface. It does not yet own product branding, TOML loading, embedded assets, or
-application handoff; those remain Phase 5 and Phase 6 work.
+interface. Product branding, TOML loading, and embedded assets were added in Phase 5;
+application handoff remains Phase 6 work.
 
 The primary design constraint is the single Wi-Fi radio. Starting infrastructure or a
 new standalone profile interrupts the browser's current connection. A setup request
@@ -115,9 +115,9 @@ CSS. Vite provides local development, type-aware builds, and static output. The 
 support keyboard navigation, visible focus, screen-reader labels, touch targets, reduced
 motion, narrow captive windows, and browsers that reopen after the AP is restored.
 
-During Phase 4, a debug command serves the built frontend directory alongside the Go
-API. Phase 5 replaces that filesystem dependency with embedded compiled assets while
-preserving the API and UI behavior.
+During Phase 4, a temporary debug command served the built frontend directory alongside
+the Go API. Phase 5 replaced that filesystem dependency with embedded compiled assets;
+the temporary command was removed after the production flow passed hardware acceptance.
 
 ## Acceptance
 

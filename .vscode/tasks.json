@@ -153,12 +153,20 @@
       "problemMatcher": []
     },
     {
+      "label": "Scripts: check",
+      "type": "process",
+      "command": "bash",
+      "args": ["-n", "scripts/setup-recorder.sh", "scripts/dbus-trace-recorder.sh"],
+      "problemMatcher": []
+    },
+    {
       "label": "Check: all",
       "dependsOrder": "sequence",
       "dependsOn": [
         "Go: format all",
         "Go: test all",
         "Go: vet all",
+        "Scripts: check",
         "Frontend: test",
         "Frontend: build",
         "Go: build onboardd",

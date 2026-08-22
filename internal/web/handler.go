@@ -12,8 +12,7 @@ const contentSecurityPolicy = "default-src 'self'; base-uri 'none'; form-action 
 	"frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'; " +
 	"connect-src 'self'; img-src 'self' data:"
 
-// Handler combines the versioned API with built frontend assets. Production supplies
-// an embedded filesystem; the Phase 4 debug command can still supply a directory.
+// Handler combines the versioned API with frontend assets embedded in the binary.
 type Handler struct {
 	api    http.Handler
 	assets fs.FS

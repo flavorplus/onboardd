@@ -15,6 +15,7 @@ Run VS Code task **Check: all**, then copy the binary and acceptance fixtures:
 ```bash
 shasum -a 256 bin/onboardd-linux-arm64
 scp bin/onboardd-linux-arm64 admin@photodisplay:~/onboardd
+scp scripts/setup-recorder.sh admin@photodisplay:~/setup-recorder.sh
 scp integration/phase-5/* admin@photodisplay:~/
 ```
 
@@ -23,6 +24,7 @@ No `frontend` directory is transferred. On the Pi:
 ```bash
 sha256sum ~/onboardd
 chmod +x ~/onboardd
+chmod +x ~/setup-recorder.sh
 sudo mkdir -p /etc/onboardd
 sudo cp ~/anthias.toml /etc/onboardd/anthias.toml
 sudo cp ~/inkypi.toml /etc/onboardd/inkypi.toml
@@ -55,7 +57,7 @@ prefixes differ.
 ## 3. Anthias configuration
 
 ```bash
-sudo ~/onboardd setup --config /etc/onboardd/anthias.toml
+~/setup-recorder.sh start /etc/onboardd/anthias.toml
 ```
 
 Join the rendered `Anthias-Setup-…` SSID and open `http://10.42.0.1/`. Confirm the
@@ -63,23 +65,25 @@ Anthias acceptance mark, magenta palette, Lobby player name, and Anthias text. C
 either infrastructure or standalone once and confirm the result page.
 
 Changing the only Wi-Fi interface normally disconnects the SSH terminal while onboardd
-continues running. After reconnecting, locate and gracefully stop that specific process:
+continues running. After reconnecting, inspect and gracefully stop it through the
+recorder:
 
 ```bash
-sudo pgrep -af '/home/admin/onboardd setup'
-sudo kill -TERM PID_FROM_THE_PREVIOUS_COMMAND
+~/setup-recorder.sh status
+~/setup-recorder.sh show
+~/setup-recorder.sh stop
 sudo ss -ltnp '( sport = :18080 )'
 ```
 
-The final command must show that onboardd no longer owns the private listener. Do not
-use `kill -9`, because it bypasses temporary-resource cleanup.
+The final command must show that onboardd no longer owns the private listener. The
+recorder sends `SIGTERM` and never bypasses temporary-resource cleanup.
 
 ## 4. InkyPi configuration
 
 Run the exact same binary with only the configuration changed:
 
 ```bash
-sudo ~/onboardd setup --config /etc/onboardd/inkypi.toml
+~/setup-recorder.sh start /etc/onboardd/inkypi.toml
 ```
 
 Join the rendered `InkyPi-Setup-…` SSID. Confirm the distinct acceptance mark, blue

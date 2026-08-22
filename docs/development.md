@@ -60,9 +60,8 @@ compiled output directory and cannot affect the Pi or production networking path
 
 ### Embedded frontend build
 
-`npm run build` writes identical production assets to `internal/frontend/dist` for Go
-embedding and to `frontend/dist` for the preserved Phase 4 external-directory debug
-command. The first directory is committed so a clean checkout always compiles; rebuilding
+`npm run build` writes production assets directly to `internal/frontend/dist` for Go
+embedding. The directory is committed so a clean checkout always compiles; rebuilding
 the frontend refreshes it before the binary is built. VS Code's **Go: build onboardd**
 and **Go: build Pi Zero 2 W** tasks automatically run **Frontend: build** first.
 
@@ -72,8 +71,18 @@ The normal Pi command no longer needs a copied frontend directory:
 sudo ~/onboardd setup --config /etc/onboardd/config.toml
 ```
 
-`debug setup-start --frontend-dir ...` remains available for Phase 4 regression tests
-and for deliberately serving an alternate local build.
+For an SSH-safe hardware run, copy `scripts/setup-recorder.sh` beside the binary and use:
+
+```bash
+~/setup-recorder.sh start /etc/onboardd/config.toml
+~/setup-recorder.sh status
+~/setup-recorder.sh show
+~/setup-recorder.sh stop
+```
+
+The recorder logs the binary hash and command, survives a `wlan0` transition, and sends
+`SIGTERM` so onboardd can remove temporary captive resources. It deliberately never
+falls back to a forced kill.
 
 ## Phase discipline
 
@@ -113,15 +122,13 @@ development machine's network.
 
 Phase 3 tests use fake NetworkManager/checkpoint adapters and in-memory HTTP connections,
 so `internal/captive` and `internal/recovery` can be debugged without opening local ports
-or changing the development machine's network. The target-device run is documented in
-`docs/phase-3-hardware-checklist.md`.
+or changing the development machine's network. Its accepted hardware evidence is
+summarized in `docs/phase-3-hardware-checklist.md`.
 
 Phase 4 added deterministic controller and HTTP tests in `internal/setup` and
-`internal/web`, plus small TypeScript model tests. The complete browser and radio test
-is documented in `docs/phase-4-hardware-checklist.md`; transfer the built
-`frontend/dist` directory alongside the Pi binary for the historical Phase 4 check.
-Phase 5 embeds that compiled interface, so current hardware tests transfer only the
-binary, configuration, optional logo, and secret files.
+`internal/web`, plus small TypeScript model tests. Its accepted browser and radio
+evidence is summarized in `docs/phase-4-hardware-checklist.md`. Current hardware tests
+transfer only the binary, recorder, configuration, optional logo, and secret files.
 
 ## Repository layout
 

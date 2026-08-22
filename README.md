@@ -92,42 +92,20 @@ the default build/test assumption and was validated during the Phase 1 hardware 
 The current binary contains direct NetworkManager D-Bus diagnostics:
 
 ```text
+onboardd debug config
 onboardd debug status
 onboardd debug profiles
+onboardd debug profile-delete
 onboardd debug scan
 onboardd debug watch
-onboardd debug connect
-onboardd debug provisioning-start
-onboardd debug standalone-start
-onboardd debug captive-start
-onboardd debug setup-start
-onboardd debug connect-protected
-onboardd debug checkpoint-create
-onboardd debug checkpoint-commit
-onboardd debug checkpoint-rollback
 onboardd debug reconcile
 ```
 
-Run `onboardd debug help` for the safety flags and complete command forms. Commands that
-change networking require `--yes`; credentials are accepted only through password files.
-The [Phase 1 hardware checklist](docs/phase-1-hardware-checklist.md) records the accepted
-Raspberry Pi validation boundary.
+Run `onboardd debug help` for complete command forms. Network changes use only the
+configured `onboardd setup` workflow; retired phase-proof mutation commands are not a
+second public control surface. `profile-delete` is restricted to onboardd-owned profiles
+and requires explicit confirmation.
 
-Phase 3's `captive-start` diagnostic runs the complete temporary provisioning lifecycle:
-wildcard DNS, the in-memory AP, address confirmation, a private HTTP listener, and an
-interface-scoped nftables redirect. An existing appliance application can retain port 80
-while provisioning traffic reaches onboardd. The command stays in the foreground until
-interrupted so cleanup can remove the temporary profile, redirect, and DNS fragment.
-
-`connect-protected` is the matching recovery diagnostic. It creates a NetworkManager
-checkpoint before trying infrastructure and confirms that the active provisioning UUID
-and address return after any rejected attempt.
-
-Phase 4's `setup-start` diagnostic adds the versioned setup API and compiled TypeScript
-interface. It serves `frontend/dist` during development, keeps network changes alive
-across browser disconnects, and supports protected infrastructure and standalone mode
-selection from the same product-facing flow.
-
-Phase 5's normal `setup` command resolves TOML, environment variables, and operational
-CLI overrides; renders stable device-specific names; loads secure password files and
-optional branding; then runs that same flow from frontend assets embedded in the binary.
+When an SSH connection uses the Wi-Fi interface being configured, run setup through
+`scripts/setup-recorder.sh`. It retains the log and PID across the radio transition and
+sends a graceful termination signal during cleanup.

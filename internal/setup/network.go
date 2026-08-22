@@ -32,8 +32,7 @@ type CaptiveExiter interface {
 	ExitCaptive(context.Context) error
 }
 
-// NetworkOptions contains runtime policy already resolved by the caller. Phase 5 will
-// populate it from TOML; Phase 4's debug command supplies explicit values.
+// NetworkOptions contains runtime policy already resolved from product configuration.
 type NetworkOptions struct {
 	Interface         string
 	Requirement       connectivity.Requirement

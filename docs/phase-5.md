@@ -31,8 +31,10 @@ startup path has replaced it.
 
 The production entry point is `onboardd setup`. It resolves the public configuration,
 loads secure password files and optional branding, renders device-specific values, and
-serves the embedded bundle. Low-level Phase 4 flags stay under `debug setup-start`.
-This phase starts provisioning explicitly; boot-time mode reconciliation and service
+serves the embedded bundle. The superseded Phase 1–4 mutation commands were removed
+after acceptance so setup has
+one supported network-changing entry point. This phase starts provisioning explicitly;
+boot-time mode reconciliation and service
 installation remain Phase 7 and Phase 8 responsibilities.
 
 ## Configuration rules

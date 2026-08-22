@@ -115,45 +115,9 @@ onboardd debug reconcile \
 Add `--json` for structured output. The command is read-only; reaching the
 `provisioning` state does not start an AP in Phase 2.
 
-## Recording disruptive remote tests
-
-When only SSH is available, use `scripts/phase-2-recorder.sh`. It detaches both the
-watcher and transition commands from the SSH session so switching `wlan0` cannot stop
-them. Commands and their output are appended to one timestamped log. The recorder logs
-the binary's SHA-256 before the observer and every transition command, making stale
-deployments visible in the test evidence.
-
-Copy the script to the Pi, make it executable, and start the observer while the SSH
-connection is stable:
-
-```bash
-chmod +x ~/phase-2-recorder.sh
-~/phase-2-recorder.sh start local 30s
-```
-
-Launch every test command through the recorder. For example:
-
-```bash
-~/phase-2-recorder.sh run debug provisioning-start \
-  --interface wlan0 \
-  --ssid Onboardd-Setup-Test \
-  --password-file /tmp/onboardd-test-password \
-  --yes
-```
-
-After reconnecting, inspect or follow the combined record:
-
-```bash
-~/phase-2-recorder.sh show
-~/phase-2-recorder.sh follow
-```
-
-Stop only the reconciliation watcher when finished; launched transition commands are
-short-lived independent processes:
-
-```bash
-~/phase-2-recorder.sh stop
-```
+The phase-specific transition runner used during initial hardware proof was removed
+after the production setup workflow superseded it. Current SSH-sensitive hardware runs
+use the single `scripts/setup-recorder.sh` command documented in the development guide.
 
 ## Capturing full D-Bus traffic
 
