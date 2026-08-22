@@ -1,5 +1,6 @@
 import type {
   Bootstrap,
+  Branding,
   Capabilities,
   Mode,
   Network,
@@ -12,6 +13,27 @@ export const mockCSRFToken = "onboardd-local-preview-token";
 export const rejectedMockPassword = "wrong-password";
 
 export type MockModePolicy = "both" | "network" | "standalone";
+
+export type MockBrand = "default" | "custom";
+
+const defaultBranding: Branding = {
+  product_name: "Device setup",
+  device_name: "Device",
+  title: "How should this device connect?",
+  subtitle: "Choose Wi-Fi for normal network access, or keep this device available as its own network.",
+  primary_color: "#cd2455",
+  background_color: "#f8eff3",
+};
+
+const customBranding: Branding = {
+  product_name: "InkyPi",
+  device_name: "Kitchen Display",
+  title: "Set up your Kitchen Display",
+  subtitle: "Connect your display to Wi-Fi or keep it available as a private offline network.",
+  primary_color: "#2b6f69",
+  background_color: "#eef7f3",
+  logo_url: "/api/v1/branding/logo",
+};
 
 export interface MockRequest {
   method: string;
@@ -44,12 +66,14 @@ export class MockDevice {
   private currentMode: Mode = "setup";
   private operation?: InternalOperation;
   private sequence = 0;
+  private readonly branding: Branding;
 
-  constructor(policy: MockModePolicy = "both") {
+  constructor(policy: MockModePolicy = "both", brand: MockBrand = "default") {
     this.capabilities = {
       network: policy === "both" || policy === "network",
       standalone: policy === "both" || policy === "standalone",
     };
+    this.branding = brand === "custom" ? customBranding : defaultBranding;
   }
 
   handle(request: MockRequest, now = Date.now()): MockResponse {
@@ -81,6 +105,7 @@ export class MockDevice {
   private bootstrap(now: number): Bootstrap {
     const operation = this.operationSnapshot(now);
     return {
+      branding: this.branding,
       capabilities: this.capabilities,
       current_mode: this.currentMode,
       operation,

@@ -1,62 +1,51 @@
+# Keep this line so VS Code validates and completes this file with our JSON Schema.
 #:schema ./schema.json
 
+# Configuration contract version. onboardd refuses unknown versions instead of guessing.
 schema_version = 1
 
 [product]
+# Product family shown in setup and available to SSID templates as .ProductName.
 name = "Display Player"
+# Friendly name of this particular appliance, available to templates as .DeviceName.
 device_name = "Lobby Display"
 
 [branding]
+# Optional SVG, PNG, or JPEG logo. Leave this key out to use the wireless mark.
 logo = "/etc/onboardd/company.svg"
-
-[branding.colors]
-primary = "#16232E"
-accent = "#4879FF"
-background = "#FFFFFF"
+# Main action and highlight color as a six-digit hexadecimal value.
+primary_color = "#cd2455"
+# Page background color as a six-digit hexadecimal value.
+background_color = "#f8eff3"
 
 [branding.text]
+# Main heading and supporting sentence on the first setup screen. Both support templates.
 title = "Set up your display"
 subtitle = "Choose how this display should connect."
 
 [network]
+# NetworkManager Wi-Fi interface controlled by onboardd.
 interface = "wlan0"
+# "local" accepts a usable local network; "internet" requires confirmed Internet access.
 requirement = "local"
-
-[network.modes.infrastructure]
-enabled = true
-
-[network.modes.standalone]
-enabled = true
-
-[network.connectivity]
-grace_period = "30s"
+# Select which final modes the product offers. At least one must remain enabled.
+infrastructure_enabled = true
+standalone_enabled = true
 
 [network.provisioning]
+# Temporary setup-network name. Templates are resolved before the AP is created.
+# The only placeholders are .ProductName, .DeviceName, .DeviceID, and .Hostname.
 ssid = "{{ .ProductName }}-Setup-{{ .DeviceID }}"
+# File containing the setup-network password; the password itself never belongs in TOML.
 password_file = "/etc/onboardd/provisioning-password"
-address = "10.42.0.1/24"
 
 [network.standalone]
+# Persistent standalone-network name and password file.
 ssid = "{{ .ProductName }}-{{ .DeviceID }}"
 password_file = "/etc/onboardd/standalone-password"
+# Standalone gateway address and subnet. NetworkManager derives DHCP sharing from it.
 address = "10.42.0.1/24"
 
 [portal]
-hostname = "10.42.0.1"
-public_port = 80
+# Private setup listener. Port 80 remains fixed for captive-portal detection and redirects.
 listener_port = 18080
-
-[handoff]
-enabled = true
-label = "Continue to player"
-url = "http://player.local/"
-auto_redirect = false
-
-[handoff.wait_for]
-url = "http://127.0.0.1:8000/health"
-timeout = "30s"
-
-[recovery.gpio]
-enabled = false
-pin = 17
-hold_for = "5s"

@@ -10,6 +10,7 @@
         "kind": "build",
         "isDefault": true
       },
+      "dependsOn": ["Frontend: build"],
       "problemMatcher": "$go"
     },
     {
@@ -40,6 +41,7 @@
           "CGO_ENABLED": "0"
         }
       },
+      "dependsOn": ["Frontend: build"],
       "problemMatcher": "$go"
     },
     {
@@ -55,6 +57,25 @@
       "command": "go",
       "args": ["fmt", "./..."],
       "problemMatcher": []
+    },
+    {
+      "label": "Config: inspect example",
+      "type": "process",
+      "command": "go",
+      "args": [
+        "run",
+        "./cmd/onboardd",
+        "debug",
+        "config",
+        "--config",
+        "config/example.toml",
+        "--render",
+        "--device-id",
+        "DEV00001",
+        "--hostname",
+        "onboardd-dev"
+      ],
+      "problemMatcher": "$go"
     },
     {
       "label": "Frontend: install",
@@ -99,6 +120,17 @@
       "isBackground": true,
       "problemMatcher": []
     },
+		{
+			"label": "Frontend: dev (branded)",
+			"type": "process",
+			"command": "npm",
+			"args": ["run", "dev:branded"],
+			"options": {
+				"cwd": "${workspaceFolder}/frontend"
+			},
+			"isBackground": true,
+			"problemMatcher": []
+		},
     {
       "label": "Frontend: test",
       "type": "process",

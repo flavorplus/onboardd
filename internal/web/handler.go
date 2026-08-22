@@ -12,8 +12,8 @@ const contentSecurityPolicy = "default-src 'self'; base-uri 'none'; form-action 
 	"frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'; " +
 	"connect-src 'self'; img-src 'self' data:"
 
-// Handler combines the versioned API with built frontend assets. The fs.FS boundary is
-// filesystem-backed in Phase 4 and becomes embed.FS in Phase 5 without changing routes.
+// Handler combines the versioned API with built frontend assets. Production supplies
+// an embedded filesystem; the Phase 4 debug command can still supply a directory.
 type Handler struct {
 	api    http.Handler
 	assets fs.FS

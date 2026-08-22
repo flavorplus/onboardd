@@ -1,0 +1,126 @@
+package web
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	appconfig "github.com/flavorplus/onboardd/internal/config"
+)
+
+func TestOptionsFromRenderedConfiguration(t *testing.T) {
+	configured := appconfig.Defaults()
+	configured.Product.Name = "InkyPi"
+	configured.Product.DeviceName = "Kitchen Display"
+	configured.Branding.Text.Title = "Set up {{ .DeviceName }}"
+	rendered, err := appconfig.RenderTemplates(
+		configured,
+		appconfig.Identity{DeviceID: "AB12CD34", Hostname: "inkypi"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, err := OptionsFromConfig(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.Branding.ProductName != "InkyPi" || options.Branding.Title != "Set up Kitchen Display" {
+		t.Fatalf("branding = %+v", options.Branding)
+	}
+}
+
+func TestAPISetupIncludesConfiguredBranding(t *testing.T) {
+	branding := Branding{
+		ProductName:     "InkyPi",
+		DeviceName:      "Kitchen Display",
+		Title:           "Set up Kitchen Display",
+		Subtitle:        "Choose a connection.",
+		PrimaryColor:    "#123456",
+		BackgroundColor: "#f1f2f3",
+	}
+	api, _, _ := newTestAPIWithOptions(t, Options{Branding: branding})
+	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
+	response := httptest.NewRecorder()
+	api.ServeHTTP(response, request)
+
+	for _, expected := range []string{
+		`"product_name":"InkyPi"`,
+		`"device_name":"Kitchen Display"`,
+		`"primary_color":"#123456"`,
+	} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Errorf("response does not contain %q: %s", expected, response.Body.String())
+		}
+	}
+	if strings.Contains(response.Body.String(), "logo_url") {
+		t.Fatalf("logo URL present without configured logo: %s", response.Body.String())
+	}
+}
+
+func TestConfiguredLogoIsServedWithRestrictedPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "logo.svg")
+	if err := os.WriteFile(path, []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#123456"/></svg>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logo, err := LoadLogo(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, _, _ := newTestAPIWithOptions(t, Options{Branding: DefaultBranding(), Logo: logo})
+
+	setupRequest := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
+	setupResponse := httptest.NewRecorder()
+	api.ServeHTTP(setupResponse, setupRequest)
+	if !strings.Contains(setupResponse.Body.String(), `"logo_url":"`+logoURL+`"`) {
+		t.Fatalf("setup response = %s", setupResponse.Body.String())
+	}
+
+	logoRequest := httptest.NewRequest(http.MethodGet, testOrigin+logoURL, nil)
+	logoResponse := httptest.NewRecorder()
+	api.ServeHTTP(logoResponse, logoRequest)
+	if logoResponse.Code != http.StatusOK || logoResponse.Header().Get("Content-Type") != "image/svg+xml" {
+		t.Fatalf("logo response = %d %q", logoResponse.Code, logoResponse.Header())
+	}
+	if logoResponse.Header().Get("Content-Security-Policy") == "" ||
+		logoResponse.Header().Get("Cross-Origin-Resource-Policy") != "same-origin" {
+		t.Fatalf("logo security headers = %q", logoResponse.Header())
+	}
+}
+
+func TestLoadLogoRejectsActiveSVG(t *testing.T) {
+	for _, svg := range []string{
+		`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.com/logo.png"/></svg>`,
+	} {
+		path := filepath.Join(t.TempDir(), "logo.svg")
+		if err := os.WriteFile(path, []byte(svg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadLogo(path); err == nil {
+			t.Fatalf("LoadLogo() accepted %s", svg)
+		}
+	}
+}
+
+func TestLoadLogoRejectsCorruptRasterImage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "logo.png")
+	data := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 504)...)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadLogo(path); err == nil || !strings.Contains(err.Error(), "decode branding logo") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestNewAPIRejectsInvalidBranding(t *testing.T) {
+	_, _, service := newTestAPI(t)
+	_, err := NewAPI(service, testOrigin, Options{Branding: Branding{ProductName: "Device"}})
+	if err == nil || !strings.Contains(err.Error(), "device names") {
+		t.Fatalf("error = %v", err)
+	}
+}

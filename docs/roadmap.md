@@ -159,16 +159,28 @@ Acceptance evidence:
 
 ## Phase 5 — Branding and configuration
 
-Status: current implementation boundary.
+Status: complete. Accepted on 2026-08-22 on Raspberry Pi Zero 2 W with Raspberry Pi OS
+Trixie.
 
 Implement TOML loading, environment/CLI overrides, schema/runtime validation, safe
 templates, custom text, colors, logos, SSIDs, and product identity. Embed the compiled
 frontend in the Go binary.
 
+Implementation checklist:
+
+- [x] Strict typed TOML loading over built-in defaults.
+- [x] Environment and operational CLI overrides with documented precedence.
+- [x] Safe template rendering and stable device identity.
+- [x] Runtime branding data and optional logo handling.
+- [x] Embedded compiled frontend and production startup command.
+- [x] Local tests and two-product Raspberry Pi acceptance.
+
 Exit criterion: Anthias and InkyPi branding can be produced from configuration without
 forking or rebuilding the frontend.
 
 ## Phase 6 — Application handoff
+
+Status: next implementation boundary.
 
 Implement configurable labels and URLs, optional health checks, and mDNS discovery.
 Before a disruptive radio change, offer an explicit user-activated handoff from the

@@ -280,6 +280,10 @@ func TestAPIUnknownRouteReturnsJSON(t *testing.T) {
 }
 
 func newTestAPI(t *testing.T) (*API, *fakeAPIBackend, *setup.Service) {
+	return newTestAPIWithOptions(t)
+}
+
+func newTestAPIWithOptions(t *testing.T, options ...Options) (*API, *fakeAPIBackend, *setup.Service) {
 	t.Helper()
 	backend := &fakeAPIBackend{release: make(chan struct{})}
 	service, err := setup.NewService(
@@ -290,7 +294,7 @@ func newTestAPI(t *testing.T) (*API, *fakeAPIBackend, *setup.Service) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api, err := NewAPI(service, testOrigin)
+	api, err := NewAPI(service, testOrigin, options...)
 	if err != nil {
 		t.Fatal(err)
 	}

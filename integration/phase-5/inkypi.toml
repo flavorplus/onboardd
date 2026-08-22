@@ -1,0 +1,33 @@
+# Phase 5 acceptance fixture. The SVG is a generic test mark, not an InkyPi trademark.
+schema_version = 1
+
+[product]
+name = "InkyPi"
+device_name = "Kitchen display"
+
+[branding]
+logo = "/etc/onboardd/inkypi-acceptance.svg"
+primary_color = "#2455cd"
+background_color = "#eff3f8"
+
+[branding.text]
+title = "Set up {{ .DeviceName }}"
+subtitle = "Choose how this InkyPi display should connect."
+
+[network]
+interface = "wlan0"
+requirement = "local"
+infrastructure_enabled = true
+standalone_enabled = true
+
+[network.provisioning]
+ssid = "InkyPi-Setup-{{ .DeviceID }}"
+password_file = "/etc/onboardd/provisioning-password"
+
+[network.standalone]
+ssid = "InkyPi-{{ .DeviceID }}"
+password_file = "/etc/onboardd/standalone-password"
+address = "10.42.0.1/24"
+
+[portal]
+listener_port = 18080

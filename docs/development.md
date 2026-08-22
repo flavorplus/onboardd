@@ -18,10 +18,16 @@ The checked-in `.vscode` configuration provides:
 - a dedicated Phase 2 state-test debugger;
 - a dedicated Phase 3 captive-test debugger;
 - dedicated Phase 4 setup-controller and API debuggers;
+- Phase 5 configuration and embedded-frontend test debuggers plus resolved-example inspection;
 - visible file nesting for generated companions without hiding project content.
 
 Use **Terminal → Run Task → Check: all** before handing off a phase. Use the Run and
 Debug panel with **Debug onboardd** when stepping through Go code.
+
+Use **Terminal → Run Task → Config: inspect example** to print the final configuration
+after built-in defaults and `config/example.toml` are combined and templates are
+rendered with a clearly synthetic development identity. This is read-only and does not
+contact NetworkManager.
 
 Run **Frontend: install** after cloning, **Frontend: dev** while working on the browser
 interface, and **Frontend: build** before running the real setup command. VS Code uses
@@ -45,8 +51,29 @@ browser reconnect state used on hardware is visible locally. Use **Frontend: dev
 removes the disallowed setup choice. Stop the task before starting another variant,
 because all variants use port 5173.
 
-The simulator is a Vite development-server plugin. It is not bundled into
-`frontend/dist` and cannot affect the Pi or production networking paths.
+Use **Frontend: dev (branded)** to preview alternate product text, colors, and a logo.
+The ordinary **Frontend: dev** task retains the default wireless mark so both logo paths
+can be checked locally.
+
+The simulator is a Vite development-server plugin. It is not bundled into either
+compiled output directory and cannot affect the Pi or production networking paths.
+
+### Embedded frontend build
+
+`npm run build` writes identical production assets to `internal/frontend/dist` for Go
+embedding and to `frontend/dist` for the preserved Phase 4 external-directory debug
+command. The first directory is committed so a clean checkout always compiles; rebuilding
+the frontend refreshes it before the binary is built. VS Code's **Go: build onboardd**
+and **Go: build Pi Zero 2 W** tasks automatically run **Frontend: build** first.
+
+The normal Pi command no longer needs a copied frontend directory:
+
+```bash
+sudo ~/onboardd setup --config /etc/onboardd/config.toml
+```
+
+`debug setup-start --frontend-dir ...` remains available for Phase 4 regression tests
+and for deliberately serving an alternate local build.
 
 ## Phase discipline
 
@@ -89,10 +116,12 @@ so `internal/captive` and `internal/recovery` can be debugged without opening lo
 or changing the development machine's network. The target-device run is documented in
 `docs/phase-3-hardware-checklist.md`.
 
-Phase 4 adds deterministic controller and HTTP tests in `internal/setup` and
+Phase 4 added deterministic controller and HTTP tests in `internal/setup` and
 `internal/web`, plus small TypeScript model tests. The complete browser and radio test
 is documented in `docs/phase-4-hardware-checklist.md`; transfer the built
-`frontend/dist` directory alongside the Pi binary for this phase.
+`frontend/dist` directory alongside the Pi binary for the historical Phase 4 check.
+Phase 5 embeds that compiled interface, so current hardware tests transfer only the
+binary, configuration, optional logo, and secret files.
 
 ## Repository layout
 

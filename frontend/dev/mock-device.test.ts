@@ -45,6 +45,14 @@ test("simulates successful standalone selection and capability policy", () => {
   assert.equal(currentMode(refreshed.body), "standalone");
 });
 
+test("simulates configured branding and an optional logo", () => {
+	const device = new MockDevice("both", "custom");
+	const setup = record(device.handle({ method: "GET", path: "/api/v1/setup" }, 1000).body);
+	const branding = record(setup.branding);
+	assert.equal(branding.product_name, "InkyPi");
+	assert.equal(branding.logo_url, "/api/v1/branding/logo");
+});
+
 function record(value: unknown): Record<string, unknown> {
   assert.equal(typeof value, "object");
   assert.notEqual(value, null);

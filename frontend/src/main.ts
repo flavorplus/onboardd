@@ -2,6 +2,7 @@ import "./styles.css";
 
 import { APIError, SetupAPI } from "./api.ts";
 import {
+  brandingPalette,
   initialView,
   modeLabel,
   strengthLabel,
@@ -23,6 +24,7 @@ async function start(): Promise<void> {
   renderLoading("Opening device setup…");
   try {
     bootstrap = await api.bootstrap();
+    applyBranding();
     const view = initialView(bootstrap);
     if (view === "operation" && bootstrap.operation) {
       await monitorOperation(bootstrap.operation);
@@ -56,12 +58,7 @@ function frame(options: {
     header.append(back);
   }
   const wordmark = element("div", "wordmark");
-  const mark = element("span", "wordmark-mark");
-  mark.setAttribute("aria-hidden", "true");
-  for (let level = 1; level <= 4; level += 1) {
-    mark.append(element("span", `wordmark-bar wordmark-bar-${level}`));
-  }
-  wordmark.append(mark, textElement("span", "Device setup"));
+  wordmark.append(brandMark(), textElement("span", bootstrap.branding.product_name));
   header.append(wordmark);
 
   const content = element("div", "setup-content");
@@ -78,8 +75,8 @@ function frame(options: {
 function showModeChoice(): void {
   const content = frame({
     eyebrow: modeLabel(bootstrap.current_mode),
-    title: "How should this device connect?",
-    description: "Choose Wi-Fi for normal network access, or keep this device available as its own network.",
+    title: bootstrap.branding.title,
+    description: bootstrap.branding.subtitle,
   });
   const choices = element("div", "choice-grid");
   if (bootstrap.capabilities.network) {
@@ -103,6 +100,43 @@ function showModeChoice(): void {
     );
   }
   content.append(choices, helpText("You can change this choice later."));
+}
+
+function applyBranding(): void {
+  const palette = brandingPalette(bootstrap.branding);
+  const root = document.documentElement;
+  root.style.setProperty("--accent", palette.accent);
+  root.style.setProperty("--accent-dark", palette.accentDark);
+  root.style.setProperty("--accent-pale", palette.accentPale);
+  root.style.setProperty("--accent-wash", palette.accentWash);
+  root.style.setProperty("--line", palette.line);
+  root.style.setProperty("--accent-rgb", palette.accentRGB);
+  root.style.setProperty("--background-rgb", palette.backgroundRGB);
+  root.style.setProperty("--accent-gradient", palette.gradient);
+  document.title = `${bootstrap.branding.product_name} setup`;
+}
+
+function brandMark(): HTMLElement {
+  if (bootstrap.branding.logo_url) {
+    const logo = document.createElement("img");
+    logo.className = "wordmark-logo";
+    logo.src = bootstrap.branding.logo_url;
+    logo.alt = "";
+    logo.decoding = "async";
+    logo.referrerPolicy = "no-referrer";
+    logo.addEventListener("error", () => logo.replaceWith(wirelessMark()), { once: true });
+    return logo;
+  }
+  return wirelessMark();
+}
+
+function wirelessMark(): HTMLElement {
+  const mark = element("span", "wordmark-mark");
+  mark.setAttribute("aria-hidden", "true");
+  for (let level = 1; level <= 4; level += 1) {
+    mark.append(element("span", `wordmark-bar wordmark-bar-${level}`));
+  }
+  return mark;
 }
 
 async function showNetworks(): Promise<void> {

@@ -7,6 +7,27 @@ export interface Capabilities {
   standalone: boolean;
 }
 
+export interface Branding {
+  product_name: string;
+  device_name: string;
+  title: string;
+  subtitle: string;
+  primary_color: string;
+  background_color: string;
+  logo_url?: string;
+}
+
+export interface BrandingPalette {
+  accent: string;
+  accentDark: string;
+  accentPale: string;
+  accentWash: string;
+  line: string;
+  accentRGB: string;
+  backgroundRGB: string;
+  gradient: string;
+}
+
 export interface Network {
   ssid: string;
   security: "open" | "protected";
@@ -27,10 +48,55 @@ export interface Operation {
 }
 
 export interface Bootstrap {
+  branding: Branding;
   capabilities: Capabilities;
   current_mode: Mode;
   operation?: Operation;
   csrf_token: string;
+}
+
+export function brandingPalette(branding: Branding): BrandingPalette {
+  const accent = parseColor(branding.primary_color) ?? [205, 36, 85];
+  const background = parseColor(branding.background_color) ?? [248, 239, 243];
+  const accentDark = mix(accent, [0, 0, 0], 0.28);
+  const accentPale = mix(accent, [255, 255, 255], 0.88);
+  const accentWash = mix(accent, [255, 255, 255], 0.96);
+  const line = mix(accent, [255, 255, 255], 0.82);
+  const gradientStart = mix(accent, [255, 255, 255], 0.22);
+  const gradientEnd = mix(accent, [0, 0, 0], 0.22);
+  return {
+    accent: toHex(accent),
+    accentDark: toHex(accentDark),
+    accentPale: toHex(accentPale),
+    accentWash: toHex(accentWash),
+    line: toHex(line),
+    accentRGB: accent.join(" "),
+    backgroundRGB: background.join(" "),
+    gradient: `linear-gradient(135deg, ${toHex(gradientStart)} 0%, ${toHex(accent)} 52%, ${toHex(gradientEnd)} 100%)`,
+  };
+}
+
+function parseColor(value: string): [number, number, number] | undefined {
+  if (!/^#[0-9a-fA-F]{6}$/.test(value)) return undefined;
+  return [
+    Number.parseInt(value.slice(1, 3), 16),
+    Number.parseInt(value.slice(3, 5), 16),
+    Number.parseInt(value.slice(5, 7), 16),
+  ];
+}
+
+function mix(
+  color: [number, number, number],
+  target: [number, number, number],
+  amount: number,
+): [number, number, number] {
+  return color.map((channel, index) =>
+    Math.round(channel + (target[index]! - channel) * amount),
+  ) as [number, number, number];
+}
+
+function toHex(color: [number, number, number]): string {
+  return `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export type InitialView = "operation" | "choose-mode" | "networks" | "standalone";

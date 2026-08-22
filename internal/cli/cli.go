@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/netip"
@@ -20,9 +21,12 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/flavorplus/onboardd/internal/buildinfo"
 	"github.com/flavorplus/onboardd/internal/captive"
+	appconfig "github.com/flavorplus/onboardd/internal/config"
 	"github.com/flavorplus/onboardd/internal/connectivity"
+	embeddedfrontend "github.com/flavorplus/onboardd/internal/frontend"
 	"github.com/flavorplus/onboardd/internal/networkmanager"
 	"github.com/flavorplus/onboardd/internal/recovery"
 	setupflow "github.com/flavorplus/onboardd/internal/setup"
@@ -30,7 +34,11 @@ import (
 	webui "github.com/flavorplus/onboardd/internal/web"
 )
 
-const defaultInterface = "wlan0"
+const (
+	defaultInterface     = "wlan0"
+	defaultBand          = "bg"
+	defaultDNSConfigPath = "/etc/NetworkManager/dnsmasq-shared.d/onboardd.conf"
+)
 
 // Run executes the onboardd command line.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -40,6 +48,13 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	if args[0] == "debug" {
 		return runDebug(ctx, args[1:], stdout, stderr)
+	}
+	if args[0] == "setup" {
+		err := runSetup(ctx, args[1:], stdout, stderr)
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
 	}
 
 	root := flag.NewFlagSet("onboardd", flag.ContinueOnError)
@@ -59,6 +74,128 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	return fmt.Errorf("unknown command %q; run 'onboardd help'", strings.Join(args, " "))
 }
 
+// runSetup starts the product-configured setup experience. The command deliberately
+// does not expose low-level radio, DNS, timing, or public-port options; those remain
+// debug-only implementation controls.
+func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	defaults := appconfig.Defaults()
+	flags := newFlagSet("setup", stderr)
+	configPath := flags.String("config", appconfig.SystemPath, "TOML configuration file")
+	interfaceName := flags.String("network-interface", defaults.Network.Interface, "NetworkManager Wi-Fi interface override")
+	requirementText := flags.String("network-requirement", string(defaults.Network.Requirement), "connectivity requirement override: local or internet")
+	infrastructureEnabled := flags.Bool("infrastructure-enabled", defaults.Network.InfrastructureEnabled, "infrastructure-mode policy override")
+	standaloneEnabled := flags.Bool("standalone-enabled", defaults.Network.StandaloneEnabled, "standalone-mode policy override")
+	listenerPort := flags.Uint("listener-port", uint(defaults.Portal.ListenerPort), "private portal listener port override")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(flags); err != nil {
+		return err
+	}
+
+	set := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) {
+		set[flag.Name] = true
+	})
+	overrides := appconfig.Overrides{}
+	if set["network-interface"] {
+		overrides.NetworkInterface = interfaceName
+	}
+	if set["network-requirement"] {
+		requirement := connectivity.Requirement(*requirementText)
+		overrides.NetworkRequirement = &requirement
+	}
+	if set["infrastructure-enabled"] {
+		overrides.InfrastructureEnabled = infrastructureEnabled
+	}
+	if set["standalone-enabled"] {
+		overrides.StandaloneEnabled = standaloneEnabled
+	}
+	if set["listener-port"] {
+		if *listenerPort == 0 || *listenerPort > 65535 {
+			return errors.New("--listener-port must be between 1 and 65535")
+		}
+		port := uint16(*listenerPort)
+		overrides.ListenerPort = &port
+	}
+
+	resolved, err := appconfig.Resolve(appconfig.ResolveOptions{
+		ConfigPath:     *configPath,
+		ConfigOptional: !set["config"],
+		Environment:    os.Environ(),
+		Overrides:      overrides,
+	})
+	if err != nil {
+		return err
+	}
+	identity, err := appconfig.LoadIdentity()
+	if err != nil {
+		return err
+	}
+	resolved, err = appconfig.RenderTemplates(resolved, identity)
+	if err != nil {
+		return err
+	}
+	options, err := configuredSetupOptions(resolved)
+	if err != nil {
+		return err
+	}
+	return runInteractiveSetup(ctx, options, stdout)
+}
+
+func configuredSetupOptions(resolved appconfig.Config) (interactiveSetupOptions, error) {
+	branding, err := webui.OptionsFromConfig(resolved)
+	if err != nil {
+		return interactiveSetupOptions{}, err
+	}
+	portalPassword, err := readSecurePasswordFile(resolved.Network.Provisioning.PasswordFile)
+	if err != nil {
+		return interactiveSetupOptions{}, fmt.Errorf("provisioning password: %w", err)
+	}
+	standalonePassword := ""
+	if resolved.Network.StandaloneEnabled {
+		standalonePassword, err = readSecurePasswordFile(resolved.Network.Standalone.PasswordFile)
+		if err != nil {
+			return interactiveSetupOptions{}, fmt.Errorf("standalone password: %w", err)
+		}
+	}
+	address, err := netip.ParsePrefix(appconfig.ProvisioningAddress)
+	if err != nil {
+		return interactiveSetupOptions{}, fmt.Errorf("invalid built-in provisioning address: %w", err)
+	}
+	canonicalURL := portalURLFor(address, appconfig.CaptivePublicPort)
+	origin, err := portalOrigin(canonicalURL)
+	if err != nil {
+		return interactiveSetupOptions{}, err
+	}
+
+	return interactiveSetupOptions{
+		Interface:           resolved.Network.Interface,
+		ProvisioningSSID:    resolved.Network.Provisioning.SSID,
+		ProvisioningPSK:     portalPassword,
+		ProvisioningAddress: address,
+		Band:                defaultBand,
+		PublicHTTPPort:      appconfig.CaptivePublicPort,
+		ListenerHTTPPort:    resolved.Portal.ListenerPort,
+		PortalURL:           canonicalURL,
+		PortalOrigin:        origin,
+		DNSConfigPath:       defaultDNSConfigPath,
+		Assets:              embeddedfrontend.Assets(),
+		Branding:            branding,
+		NetworkEnabled:      resolved.Network.InfrastructureEnabled,
+		StandaloneEnabled:   resolved.Network.StandaloneEnabled,
+		StandaloneSSID:      resolved.Network.Standalone.SSID,
+		StandalonePSK:       standalonePassword,
+		StandaloneAddress:   resolved.Network.Standalone.Address,
+		Requirement:         resolved.Network.Requirement,
+		ScanWait:            5 * time.Second,
+		ActivationWait:      30 * time.Second,
+		RollbackAfter:       90 * time.Second,
+		RestorationWait:     30 * time.Second,
+		ReadyLabel:          resolved.Product.Name + " setup",
+	}, nil
+}
+
 func runDebug(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "help" {
 		printDebugHelp(stdout)
@@ -66,6 +203,8 @@ func runDebug(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 	}
 
 	switch args[0] {
+	case "config":
+		return debugConfig(args[1:], stdout, stderr)
 	case "status":
 		return debugStatus(ctx, args[1:], stdout, stderr)
 	case "profiles":
@@ -99,6 +238,88 @@ func runDebug(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 	default:
 		return fmt.Errorf("unknown debug command %q; run 'onboardd debug help'", args[0])
 	}
+}
+
+func debugConfig(args []string, stdout, stderr io.Writer) error {
+	defaults := appconfig.Defaults()
+	flags := newFlagSet("debug config", stderr)
+	configPath := flags.String("config", appconfig.SystemPath, "TOML configuration file")
+	interfaceName := flags.String("network-interface", defaults.Network.Interface, "NetworkManager Wi-Fi interface override")
+	requirementText := flags.String("network-requirement", string(defaults.Network.Requirement), "connectivity requirement override: local or internet")
+	infrastructureEnabled := flags.Bool("infrastructure-enabled", defaults.Network.InfrastructureEnabled, "infrastructure-mode policy override")
+	standaloneEnabled := flags.Bool("standalone-enabled", defaults.Network.StandaloneEnabled, "standalone-mode policy override")
+	listenerPort := flags.Uint("listener-port", uint(defaults.Portal.ListenerPort), "private portal listener port override")
+	render := flags.Bool("render", false, "render text and SSID templates in the output")
+	deviceID := flags.String("device-id", "", "debug-only device ID used with --render")
+	hostname := flags.String("hostname", "", "debug-only hostname used with --render")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(flags); err != nil {
+		return err
+	}
+
+	set := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) {
+		set[flag.Name] = true
+	})
+	overrides := appconfig.Overrides{}
+	if set["network-interface"] {
+		overrides.NetworkInterface = interfaceName
+	}
+	if set["network-requirement"] {
+		requirement := connectivity.Requirement(*requirementText)
+		overrides.NetworkRequirement = &requirement
+	}
+	if set["infrastructure-enabled"] {
+		overrides.InfrastructureEnabled = infrastructureEnabled
+	}
+	if set["standalone-enabled"] {
+		overrides.StandaloneEnabled = standaloneEnabled
+	}
+	if set["listener-port"] {
+		if *listenerPort == 0 || *listenerPort > 65535 {
+			return errors.New("--listener-port must be between 1 and 65535")
+		}
+		port := uint16(*listenerPort)
+		overrides.ListenerPort = &port
+	}
+
+	resolved, err := appconfig.Resolve(appconfig.ResolveOptions{
+		ConfigPath:     *configPath,
+		ConfigOptional: !set["config"],
+		Environment:    os.Environ(),
+		Overrides:      overrides,
+	})
+	if err != nil {
+		return err
+	}
+	if !*render && (*deviceID != "" || *hostname != "") {
+		return errors.New("--device-id and --hostname require --render")
+	}
+	if *render {
+		identity := appconfig.Identity{DeviceID: *deviceID, Hostname: *hostname}
+		if identity.DeviceID == "" || identity.Hostname == "" {
+			detected, err := appconfig.LoadIdentity()
+			if err != nil {
+				return err
+			}
+			if identity.DeviceID == "" {
+				identity.DeviceID = detected.DeviceID
+			}
+			if identity.Hostname == "" {
+				identity.Hostname = detected.Hostname
+			}
+		}
+		resolved, err = appconfig.RenderTemplates(resolved, identity)
+		if err != nil {
+			return err
+		}
+	}
+	if err := toml.NewEncoder(stdout).Encode(resolved); err != nil {
+		return fmt.Errorf("print resolved configuration: %w", err)
+	}
+	return nil
 }
 
 func debugConnectProtected(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -387,7 +608,91 @@ func debugSetupStart(ctx context.Context, args []string, stdout, stderr io.Write
 		return err
 	}
 
-	dns, err := captive.NewDNSConfigFile(*dnsConfigPath)
+	return runInteractiveSetup(ctx, interactiveSetupOptions{
+		Interface:           *interfaceName,
+		ProvisioningSSID:    *ssid,
+		ProvisioningPSK:     portalPassword,
+		ProvisioningAddress: address,
+		Band:                *band,
+		PublicHTTPPort:      uint16(*httpPort),
+		ListenerHTTPPort:    uint16(*listenerHTTPPort),
+		PortalURL:           canonicalURL,
+		PortalOrigin:        origin,
+		DNSConfigPath:       *dnsConfigPath,
+		Assets:              os.DirFS(*frontendDirectory),
+		Branding:            webui.Options{Branding: webui.DefaultBranding()},
+		NetworkEnabled:      *networkEnabled,
+		StandaloneEnabled:   *standaloneEnabled,
+		StandaloneSSID:      *standaloneSSID,
+		StandalonePSK:       standalonePassword,
+		StandaloneAddress:   *standaloneAddress,
+		Requirement:         requirement,
+		ScanWait:            *scanWait,
+		ActivationWait:      *activationWait,
+		RollbackAfter:       *rollbackAfter,
+		RestorationWait:     *restorationWait,
+		ReadyLabel:          "interactive setup",
+	}, stdout)
+}
+
+type interactiveSetupOptions struct {
+	Interface           string
+	ProvisioningSSID    string
+	ProvisioningPSK     string
+	ProvisioningAddress netip.Prefix
+	Band                string
+	PublicHTTPPort      uint16
+	ListenerHTTPPort    uint16
+	PortalURL           string
+	PortalOrigin        string
+	DNSConfigPath       string
+	Assets              fs.FS
+	Branding            webui.Options
+	NetworkEnabled      bool
+	StandaloneEnabled   bool
+	StandaloneSSID      string
+	StandalonePSK       string
+	StandaloneAddress   string
+	Requirement         connectivity.Requirement
+	ScanWait            time.Duration
+	ActivationWait      time.Duration
+	RollbackAfter       time.Duration
+	RestorationWait     time.Duration
+	ReadyLabel          string
+}
+
+func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, stdout io.Writer) error {
+	// Validate both possible AP profiles before connecting to D-Bus or changing the
+	// active interface. NewNetworkBackend repeats the standalone check as a guard at
+	// its own boundary.
+	if _, _, err := networkmanager.BuildAccessPointSettings(networkmanager.AccessPointOptions{
+		Interface: options.Interface,
+		SSID:      options.ProvisioningSSID,
+		Password:  options.ProvisioningPSK,
+		Address:   options.ProvisioningAddress.String(),
+		Role:      networkmanager.RoleProvisioning,
+		Band:      options.Band,
+	}); err != nil {
+		return fmt.Errorf("invalid provisioning network: %w", err)
+	}
+	if options.StandaloneEnabled {
+		if _, _, err := networkmanager.BuildAccessPointSettings(networkmanager.AccessPointOptions{
+			Interface: options.Interface,
+			SSID:      options.StandaloneSSID,
+			Password:  options.StandalonePSK,
+			Address:   options.StandaloneAddress,
+			Role:      networkmanager.RoleStandalone,
+			Priority:  999,
+			Band:      options.Band,
+		}); err != nil {
+			return fmt.Errorf("invalid standalone network: %w", err)
+		}
+	}
+	if _, err := fs.Stat(options.Assets, "index.html"); err != nil {
+		return fmt.Errorf("frontend assets: %w", err)
+	}
+
+	dns, err := captive.NewDNSConfigFile(options.DNSConfigPath)
 	if err != nil {
 		return err
 	}
@@ -407,15 +712,15 @@ func debugSetupStart(ctx context.Context, args []string, stdout, stderr io.Write
 	}
 	portal := &swappableHandler{}
 	session, err := lifecycle.Start(ctx, captive.StartOptions{
-		Interface:        *interfaceName,
-		SSID:             *ssid,
-		Password:         portalPassword,
-		Address:          address,
-		Band:             *band,
-		Wait:             *activationWait,
-		PublicHTTPPort:   uint16(*httpPort),
-		ListenerHTTPPort: uint16(*listenerHTTPPort),
-		PortalURL:        canonicalURL,
+		Interface:        options.Interface,
+		SSID:             options.ProvisioningSSID,
+		Password:         options.ProvisioningPSK,
+		Address:          options.ProvisioningAddress,
+		Band:             options.Band,
+		Wait:             options.ActivationWait,
+		PublicHTTPPort:   options.PublicHTTPPort,
+		ListenerHTTPPort: options.ListenerHTTPPort,
+		PortalURL:        options.PortalURL,
 	}, portal)
 	if err != nil {
 		return err
@@ -439,18 +744,18 @@ func debugSetupStart(ctx context.Context, args []string, stdout, stderr io.Write
 		standaloneTransition,
 		session,
 		setupflow.NetworkOptions{
-			Interface:         *interfaceName,
-			Requirement:       requirement,
-			ScanWait:          *scanWait,
-			ActivationWait:    *activationWait,
-			RollbackAfter:     *rollbackAfter,
-			RestorationWait:   *restorationWait,
-			StandaloneEnabled: *standaloneEnabled,
+			Interface:         options.Interface,
+			Requirement:       options.Requirement,
+			ScanWait:          options.ScanWait,
+			ActivationWait:    options.ActivationWait,
+			RollbackAfter:     options.RollbackAfter,
+			RestorationWait:   options.RestorationWait,
+			StandaloneEnabled: options.StandaloneEnabled,
 			Standalone: networkmanager.AccessPointOptions{
-				SSID:     *standaloneSSID,
-				Password: standalonePassword,
-				Address:  *standaloneAddress,
-				Band:     *band,
+				SSID:     options.StandaloneSSID,
+				Password: options.StandalonePSK,
+				Address:  options.StandaloneAddress,
+				Band:     options.Band,
 				Priority: 999,
 			},
 		},
@@ -459,25 +764,25 @@ func debugSetupStart(ctx context.Context, args []string, stdout, stderr io.Write
 		return cleanupAfterError(err)
 	}
 	service, err := setupflow.NewService(ctx, backend, setupflow.Capabilities{
-		Network:    *networkEnabled,
-		Standalone: *standaloneEnabled,
+		Network:    options.NetworkEnabled,
+		Standalone: options.StandaloneEnabled,
 	})
 	if err != nil {
 		return cleanupAfterError(err)
 	}
-	api, err := webui.NewAPI(service, origin)
+	api, err := webui.NewAPI(service, options.PortalOrigin, options.Branding)
 	if err != nil {
 		return cleanupAfterError(err)
 	}
-	handler, err := webui.NewHandler(api, os.DirFS(*frontendDirectory))
+	handler, err := webui.NewHandler(api, options.Assets)
 	if err != nil {
 		return cleanupAfterError(err)
 	}
 	portal.Set(handler)
 
 	activation := session.Activation()
-	fmt.Fprintln(stdout, "interactive setup is ready")
-	fmt.Fprintf(stdout, "SSID: %s\n", *ssid)
+	fmt.Fprintf(stdout, "%s is ready\n", options.ReadyLabel)
+	fmt.Fprintf(stdout, "SSID: %s\n", options.ProvisioningSSID)
 	fmt.Fprintf(stdout, "Portal: %s\n", session.PortalURL())
 	fmt.Fprintf(stdout, "UUID: %s\n", activation.UUID)
 	fmt.Fprintln(stdout, "Press Ctrl+C to stop setup and remove temporary resources.")
@@ -522,6 +827,14 @@ func portalOrigin(value string) (string, error) {
 		return "", errors.New("portal URL must be an absolute URL")
 	}
 	return parsed.Scheme + "://" + parsed.Host, nil
+}
+
+func portalURLFor(address netip.Prefix, port uint16) string {
+	host := address.Addr().String()
+	if port != 80 {
+		host = net.JoinHostPort(host, fmt.Sprint(port))
+	}
+	return "http://" + host + "/"
 }
 
 type swappableHandler struct {
@@ -1103,9 +1416,30 @@ func readRequiredPassword(path string) (string, error) {
 	if path == "" {
 		return "", errors.New("--password-file is required; passwords are intentionally not accepted as command-line values")
 	}
+	return readPasswordFile(path)
+}
+
+func readSecurePasswordFile(path string) (string, error) {
+	if path == "" {
+		return "", errors.New("password file path is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("inspect password file %q: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("password file %q must be a regular file", path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("password file %q must not be readable or writable by group or other users (use mode 0600)", path)
+	}
+	return readPasswordFile(path)
+}
+
+func readPasswordFile(path string) (string, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("read password file: %w", err)
+		return "", fmt.Errorf("read password file %q: %w", path, err)
 	}
 	return strings.TrimSuffix(strings.TrimSuffix(string(contents), "\n"), "\r"), nil
 }
@@ -1153,7 +1487,11 @@ func printRootHelp(writer io.Writer) {
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Usage:")
 	fmt.Fprintln(writer, "  onboardd --version")
+	fmt.Fprintln(writer, "  onboardd setup [--config /etc/onboardd/config.toml] [operational overrides]")
 	fmt.Fprintln(writer, "  onboardd debug <command> [options]")
+	fmt.Fprintln(writer)
+	fmt.Fprintln(writer, "The setup command loads TOML, environment variables, and CLI overrides, then starts")
+	fmt.Fprintln(writer, "the embedded setup portal. Run 'onboardd setup -h' for its options.")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Run 'onboardd debug help' for NetworkManager and reconciliation tools.")
 }
@@ -1162,6 +1500,7 @@ func printDebugHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "NetworkManager D-Bus and reconciliation diagnostics")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Read-only commands:")
+	fmt.Fprintln(writer, "  onboardd debug config [--config FILE] [--render] [operational overrides]")
 	fmt.Fprintln(writer, "  onboardd debug status [--interface wlan0] [--json]")
 	fmt.Fprintln(writer, "  onboardd debug profiles [--owned] [--json]")
 	fmt.Fprintln(writer, "  onboardd debug scan [--interface wlan0] [--wait 5s] [--json]")

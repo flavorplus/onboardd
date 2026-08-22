@@ -10,8 +10,8 @@ of the core daemon.
 
 ## Project status
 
-The project is being developed one phase at a time. **Phases 0 through 4 are complete.**
-Phase 5 is the current implementation boundary.
+The project is being developed one phase at a time. **Phases 0 through 5 are complete.**
+Phase 6 is the next implementation boundary.
 
 | Phase | Deliverable | Status |
 |---|---|---|
@@ -20,7 +20,7 @@ Phase 5 is the current implementation boundary.
 | 2 | Core reconciliation and transient state engine | Complete |
 | 3 | Temporary AP and captive portal plumbing | Complete |
 | 4 | Setup API and web interface | Complete |
-| 5 | Branding and configuration | In progress |
+| 5 | Branding and configuration | Complete |
 | 6 | Application handoff | Not started |
 | 7 | Recovery and appliance reliability | Not started |
 | 8 | Packaging and installation | Not started |
@@ -68,11 +68,18 @@ See [Development](docs/development.md) for the editor workflow and repository la
 The development workflow also includes a Mac-safe simulated device for iterating on the
 complete portal without transferring a build or changing the Mac's network.
 
-## Configuration preview
+## Configuration
 
-The proposed contract is demonstrated in [config/example.toml](config/example.toml) and
-described by [config/schema.json](config/schema.json). It is a Phase 0 contract; loading
-and validating it is scheduled for a later implementation phase.
+The implemented contract is demonstrated in [config/example.toml](config/example.toml)
+and described by [config/schema.json](config/schema.json). The configuration-driven
+setup experience is started with:
+
+```text
+sudo onboardd setup --config /etc/onboardd/config.toml
+```
+
+The compiled browser interface is embedded in the executable; no frontend directory is
+needed beside the production binary.
 
 ## Initial target
 
@@ -120,3 +127,7 @@ Phase 4's `setup-start` diagnostic adds the versioned setup API and compiled Typ
 interface. It serves `frontend/dist` during development, keeps network changes alive
 across browser disconnects, and supports protected infrastructure and standalone mode
 selection from the same product-facing flow.
+
+Phase 5's normal `setup` command resolves TOML, environment variables, and operational
+CLI overrides; renders stable device-specific names; loads secure password files and
+optional branding; then runs that same flow from frontend assets embedded in the binary.

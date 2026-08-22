@@ -88,5 +88,4 @@ discovery, application link, and standalone QR handoff.
 
 ## Resolve before the relevant later phase
 
-- Exact environment-variable and CLI flag surface: Phase 5.
 - `.deb` ownership, capabilities, and service hardening: Phase 8.

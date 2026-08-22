@@ -7,7 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "dev:network-only": "vite --host 127.0.0.1 --mode network-only",
     "dev:standalone-only": "vite --host 127.0.0.1 --mode standalone-only",
-    "build": "tsc --noEmit && vite build",
+    "dev:branded": "vite --host 127.0.0.1 --mode branded",
+    "build": "tsc --noEmit && vite build && vite build --outDir dist",
     "test": "node --test src/*.test.ts dev/*.test.ts"
   },
   "devDependencies": {

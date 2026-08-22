@@ -1,10 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
 
-import { MockDevice, type MockModePolicy, rejectedMockPassword } from "./mock-device.ts";
+import { MockDevice, type MockBrand, type MockModePolicy, rejectedMockPassword } from "./mock-device.ts";
 
-export function mockSetupAPI(policy: MockModePolicy): Plugin {
-  const device = new MockDevice(policy);
+const mockLogo = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="12" fill="#2b6f69"/><path d="M13 25c7-8 15-11 22-8-2 9-8 16-19 18 4-3 7-6 9-10-4 3-8 5-12 5z" fill="#fff"/></svg>`;
+
+export function mockSetupAPI(policy: MockModePolicy, brand: MockBrand = "default"): Plugin {
+  const device = new MockDevice(policy, brand);
   return {
     name: "onboardd-local-device",
     apply: "serve",
@@ -16,6 +18,17 @@ export function mockSetupAPI(policy: MockModePolicy): Plugin {
         const url = new URL(request.url ?? "/", "http://127.0.0.1");
         if (!url.pathname.startsWith("/api/")) {
           next();
+          return;
+        }
+        if (
+          brand === "custom" &&
+          request.method === "GET" &&
+          url.pathname === "/api/v1/branding/logo"
+        ) {
+          response.statusCode = 200;
+          response.setHeader("Content-Type", "image/svg+xml");
+          response.setHeader("Cache-Control", "no-store");
+          response.end(mockLogo);
           return;
         }
         try {
