@@ -14,6 +14,12 @@ export default defineConfig(({ mode }) => {
       outDir: "../internal/frontend/dist",
       emptyOutDir: true,
       target: "es2020",
+      rollupOptions: {
+        input: {
+          setup: "index.html",
+          landing: "landing.html",
+        },
+      },
     },
     server: {
       port: 5173,

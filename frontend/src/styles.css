@@ -36,6 +36,56 @@ body {
 		linear-gradient(145deg, rgb(var(--background-rgb)) 0%, rgb(var(--accent-rgb) / 13%) 100%);
 }
 
+.landing-body {
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 5vw, 2rem);
+}
+
+.landing-shell {
+  width: min(100%, 28rem);
+  padding: clamp(2rem, 8vw, 3rem);
+  text-align: center;
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid rgb(var(--accent-rgb) / 20%);
+  border-radius: 1.75rem;
+  box-shadow: var(--shadow);
+}
+
+.landing-shell h1,
+.landing-shell .lede {
+  max-width: none;
+}
+
+.landing-wireless-mark {
+  display: inline-flex;
+  gap: 0.2rem;
+  align-items: flex-end;
+  width: 3rem;
+  height: 2.5rem;
+  margin-bottom: 1.5rem;
+  padding: 0.15rem;
+}
+
+.landing-action {
+  width: 100%;
+  margin-top: 2rem;
+}
+
+.landing-fallback {
+  margin: 1.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.landing-fallback strong {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 button,
 input,
 select {
@@ -362,12 +412,17 @@ select:hover {
 }
 
 .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 3rem;
   padding: 0.72rem 1rem;
   font-weight: 750;
   border: 1px solid transparent;
   border-radius: 0.75rem;
   cursor: pointer;
+  text-align: center;
+  text-decoration: none;
 }
 
 .button:disabled {
@@ -412,6 +467,7 @@ select:hover {
 }
 
 .notice,
+.handoff-panel,
 .progress-card,
 .error-panel {
   max-width: 36rem;
@@ -423,6 +479,125 @@ select:hover {
 .notice {
   background: #f3f7f5;
   border: 1px solid var(--line);
+}
+
+.handoff-panel {
+  background: var(--accent-wash);
+  border: 1px solid var(--line);
+}
+
+.handoff-panel p {
+  margin: 0.45rem 0 1rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.standalone-handoff {
+  max-width: 42rem;
+  margin-top: 2rem;
+  padding: 1.25rem;
+  background: var(--accent-wash);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+}
+
+.standalone-handoff h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.handoff-description {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.handoff-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.45rem 1rem;
+  margin: 1.25rem 0 0;
+}
+
+.handoff-details dt {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.handoff-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88rem;
+}
+
+.credential-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+}
+
+.copy-credential {
+  min-height: 2rem;
+  padding: 0.25rem 0.55rem;
+  font-family: inherit;
+  font-size: 0.8rem;
+  border-color: var(--line);
+}
+
+.qr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.qr-grid-single {
+  grid-template-columns: minmax(0, 18rem);
+  justify-content: center;
+}
+
+.qr-card {
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+  padding: 1rem;
+  text-align: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+}
+
+.qr-card canvas {
+  width: min(100%, 12.25rem);
+  height: auto;
+  border-radius: 0.35rem;
+}
+
+.qr-card small {
+  max-width: 100%;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.qr-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 34rem) {
+  .handoff-details {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+
+  .handoff-details dd + dt {
+    margin-top: 0.55rem;
+  }
 }
 
 .notice p {

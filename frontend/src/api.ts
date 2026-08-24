@@ -22,6 +22,11 @@ export class APIError extends Error {
 
 export class SetupAPI {
   private csrfToken = "";
+  private readonly requestTimeoutMilliseconds: number;
+
+  constructor(requestTimeoutMilliseconds = 5000) {
+    this.requestTimeoutMilliseconds = requestTimeoutMilliseconds;
+  }
 
   async bootstrap(): Promise<Bootstrap> {
     const result = await this.request<Bootstrap>("/api/v1/setup");
@@ -69,20 +74,30 @@ export class SetupAPI {
       headers.set("Content-Type", "application/json");
       headers.set("X-Onboardd-CSRF", this.csrfToken);
     }
-    const response = await fetch(path, {
-      ...init,
-      headers,
-      cache: "no-store",
-      credentials: "same-origin",
-    });
-    const body = (await response.json()) as T & ErrorBody;
-    if (!response.ok) {
-      throw new APIError(
-        body.error?.code ?? "request_failed",
-        body.error?.message ?? "The request could not be completed.",
-        body.operation,
-      );
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(
+      () => controller.abort(),
+      this.requestTimeoutMilliseconds,
+    );
+    try {
+      const response = await fetch(path, {
+        ...init,
+        headers,
+        cache: "no-store",
+        credentials: "same-origin",
+        signal: controller.signal,
+      });
+      const body = (await response.json()) as T & ErrorBody;
+      if (!response.ok) {
+        throw new APIError(
+          body.error?.code ?? "request_failed",
+          body.error?.message ?? "The request could not be completed.",
+          body.operation,
+        );
+      }
+      return body;
+    } finally {
+      globalThis.clearTimeout(timeout);
     }
-    return body;
   }
 }

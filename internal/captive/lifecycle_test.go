@@ -222,6 +222,8 @@ func validStartOptions() StartOptions {
 		PublicHTTPPort:   80,
 		ListenerHTTPPort: 18080,
 		PortalURL:        "http://10.42.0.1/",
+		SetupURL:         "http://device.local:18080/",
+		LandingPage:      testLandingPage,
 	}
 }
 

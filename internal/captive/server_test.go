@@ -19,7 +19,13 @@ func TestStartHTTPServerServesAndShutsDown(t *testing.T) {
 	portal := http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(response, "setup")
 	})
-	handler, err := NewHTTPHandler("http://10.42.0.1/", 18080, portal)
+	handler, err := NewHTTPHandler(
+		"http://10.42.0.1/",
+		"http://device.local:18080/",
+		18080,
+		testLandingPage,
+		portal,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

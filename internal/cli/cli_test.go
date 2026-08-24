@@ -165,6 +165,7 @@ func TestConfiguredSetupOptionsUseRenderedConfigAndEmbeddedAssets(t *testing.T) 
 	configured.Network.Interface = "wlan-test"
 	configured.Network.Provisioning.PasswordFile = provisioningPassword
 	configured.Network.Standalone.PasswordFile = standalonePassword
+	configured.Handoff.ShowStandaloneCredentials = true
 	configured.Portal.ListenerPort = 19000
 	rendered, err := appconfig.RenderTemplates(
 		configured,
@@ -173,7 +174,7 @@ func TestConfiguredSetupOptionsUseRenderedConfigAndEmbeddedAssets(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	options, err := configuredSetupOptions(rendered)
+	options, err := configuredSetupOptions(rendered, "inkypi")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,8 +187,19 @@ func TestConfiguredSetupOptionsUseRenderedConfigAndEmbeddedAssets(t *testing.T) 
 	if options.Branding.Branding.ProductName != "InkyPi" || options.ProvisioningPSK != "test-password" {
 		t.Fatalf("branding or secret mapping = %+v", options)
 	}
+	if options.Branding.Handoff == nil || options.Branding.Handoff.SetupURL != "http://inkypi.local:19000/" {
+		t.Fatalf("handoff mapping = %+v", options.Branding.Handoff)
+	}
+	if options.Branding.Handoff.Standalone == nil ||
+		options.Branding.Handoff.Standalone.SSID != "InkyPi-AB12CD34" ||
+		options.Branding.Handoff.Standalone.Password != "test-password" {
+		t.Fatalf("standalone handoff = %+v", options.Branding.Handoff.Standalone)
+	}
 	if _, err := fs.Stat(options.Assets, "index.html"); err != nil {
 		t.Fatalf("embedded assets: %v", err)
+	}
+	if _, err := fs.Stat(options.Assets, "landing.html"); err != nil {
+		t.Fatalf("embedded landing page: %v", err)
 	}
 }
 

@@ -11,7 +11,7 @@ of the core daemon.
 ## Project status
 
 The project is being developed one phase at a time. **Phases 0 through 5 are complete.**
-Phase 6 is the next implementation boundary.
+Phase 6 is in progress.
 
 | Phase | Deliverable | Status |
 |---|---|---|
@@ -21,7 +21,7 @@ Phase 6 is the next implementation boundary.
 | 3 | Temporary AP and captive portal plumbing | Complete |
 | 4 | Setup API and web interface | Complete |
 | 5 | Branding and configuration | Complete |
-| 6 | Application handoff | Not started |
+| 6 | Application handoff | In progress |
 | 7 | Recovery and appliance reliability | Not started |
 | 8 | Packaging and installation | Not started |
 | 9 | Hardware validation and v1.0 integrations | Not started |

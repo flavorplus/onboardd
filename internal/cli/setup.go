@@ -18,6 +18,7 @@ import (
 	"github.com/flavorplus/onboardd/internal/captive"
 	appconfig "github.com/flavorplus/onboardd/internal/config"
 	"github.com/flavorplus/onboardd/internal/connectivity"
+	"github.com/flavorplus/onboardd/internal/discovery"
 	embeddedfrontend "github.com/flavorplus/onboardd/internal/frontend"
 	"github.com/flavorplus/onboardd/internal/networkmanager"
 	"github.com/flavorplus/onboardd/internal/recovery"
@@ -56,23 +57,28 @@ func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 	if err != nil {
 		return err
 	}
+	avahiHostname, err := discovery.CurrentHostname(ctx)
+	if err != nil {
+		return fmt.Errorf("discover host mDNS name: %w", err)
+	}
 	identity, err := appconfig.LoadIdentity()
 	if err != nil {
 		return err
 	}
+	identity.Hostname = avahiHostname
 	resolved, err = appconfig.RenderTemplates(resolved, identity)
 	if err != nil {
 		return err
 	}
-	options, err := configuredSetupOptions(resolved)
+	options, err := configuredSetupOptions(resolved, avahiHostname)
 	if err != nil {
 		return err
 	}
 	return runInteractiveSetup(ctx, options, stdout)
 }
 
-func configuredSetupOptions(resolved appconfig.Config) (interactiveSetupOptions, error) {
-	branding, err := webui.OptionsFromConfig(resolved)
+func configuredSetupOptions(resolved appconfig.Config, hostname string) (interactiveSetupOptions, error) {
+	branding, err := webui.OptionsFromConfig(resolved, hostname)
 	if err != nil {
 		return interactiveSetupOptions{}, err
 	}
@@ -85,6 +91,10 @@ func configuredSetupOptions(resolved appconfig.Config) (interactiveSetupOptions,
 		standalonePassword, err = readSecurePasswordFile(resolved.Network.Standalone.PasswordFile)
 		if err != nil {
 			return interactiveSetupOptions{}, fmt.Errorf("standalone password: %w", err)
+		}
+		if branding.Handoff != nil && branding.Handoff.Standalone != nil &&
+			branding.Handoff.ShowStandaloneCredentials {
+			branding.Handoff.Standalone.Password = standalonePassword
 		}
 	}
 	address, err := netip.ParsePrefix(appconfig.ProvisioningAddress)
@@ -121,6 +131,7 @@ func configuredSetupOptions(resolved appconfig.Config) (interactiveSetupOptions,
 		RollbackAfter:       90 * time.Second,
 		RestorationWait:     30 * time.Second,
 		ReadyLabel:          resolved.Product.Name + " setup",
+		Hostname:            hostname,
 	}, nil
 }
 
@@ -148,6 +159,7 @@ type interactiveSetupOptions struct {
 	RollbackAfter       time.Duration
 	RestorationWait     time.Duration
 	ReadyLabel          string
+	Hostname            string
 }
 
 func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, stdout io.Writer) error {
@@ -179,6 +191,13 @@ func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, s
 	if _, err := fs.Stat(options.Assets, "index.html"); err != nil {
 		return fmt.Errorf("frontend assets: %w", err)
 	}
+	landingPage, err := fs.ReadFile(options.Assets, "landing.html")
+	if err != nil {
+		return fmt.Errorf("frontend landing page: %w", err)
+	}
+	if options.Branding.Handoff == nil {
+		return errors.New("resolved handoff configuration is required")
+	}
 
 	dns, err := captive.NewDNSConfigFile(options.DNSConfigPath)
 	if err != nil {
@@ -198,7 +217,23 @@ func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, s
 	if err != nil {
 		return err
 	}
+	publisher, err := discovery.Start(ctx, discovery.Options{
+		ServiceName: options.ReadyLabel,
+		Port:        options.ListenerHTTPPort,
+	})
+	if err != nil {
+		return fmt.Errorf("start mDNS discovery: %w", err)
+	}
+	if !strings.EqualFold(publisher.Hostname(), options.Hostname) {
+		cleanupContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return errors.Join(
+			fmt.Errorf("Avahi hostname changed from %q to %q while setup was starting", options.Hostname, publisher.Hostname()),
+			publisher.Close(cleanupContext),
+		)
+	}
 	portal := &swappableHandler{}
+	portal.Set(http.FileServer(http.FS(options.Assets)))
 	session, err := lifecycle.Start(ctx, captive.StartOptions{
 		Interface:        options.Interface,
 		SSID:             options.ProvisioningSSID,
@@ -209,14 +244,18 @@ func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, s
 		PublicHTTPPort:   options.PublicHTTPPort,
 		ListenerHTTPPort: options.ListenerHTTPPort,
 		PortalURL:        options.PortalURL,
+		SetupURL:         options.Branding.Handoff.SetupURL,
+		LandingPage:      landingPage,
 	}, portal)
 	if err != nil {
-		return err
+		cleanupContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		return errors.Join(err, publisher.Close(cleanupContext))
 	}
 	cleanupAfterError := func(cause error) error {
 		cleanupContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		return errors.Join(cause, session.Stop(cleanupContext))
+		return errors.Join(cause, publisher.Close(cleanupContext), session.Stop(cleanupContext))
 	}
 	infrastructureTransition, err := recovery.NewInfrastructure(client)
 	if err != nil {
@@ -272,6 +311,7 @@ func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, s
 	fmt.Fprintf(stdout, "%s is ready\n", options.ReadyLabel)
 	fmt.Fprintf(stdout, "SSID: %s\n", options.ProvisioningSSID)
 	fmt.Fprintf(stdout, "Portal: %s\n", session.PortalURL())
+	fmt.Fprintf(stdout, "Setup: %s\n", options.Branding.Handoff.SetupURL)
 	fmt.Fprintf(stdout, "UUID: %s\n", activation.UUID)
 	fmt.Fprintln(stdout, "Press Ctrl+C to stop setup and remove temporary resources.")
 
@@ -286,9 +326,10 @@ func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, s
 	}
 	cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelCleanup()
+	discoveryErr := publisher.Close(cleanupContext)
 	stopErr := session.Stop(cleanupContext)
-	if serveErr != nil || stopErr != nil {
-		return errors.Join(serveErr, stopErr)
+	if serveErr != nil || discoveryErr != nil || stopErr != nil {
+		return errors.Join(serveErr, discoveryErr, stopErr)
 	}
 	fmt.Fprintln(stdout, "interactive setup stopped and temporary resources were removed")
 	return nil

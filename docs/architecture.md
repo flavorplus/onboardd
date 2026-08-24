@@ -26,9 +26,11 @@ setup experience, product branding, and recovery behavior.
 
 During provisioning, the product application may already own TCP port 80. A temporary
 nftables rule redirects only port 80 traffic entering through the provisioning interface
-to onboardd's private HTTP listener. The rule uses a separately owned table and is
-removed with the captive lifecycle; traffic arriving through production interfaces keeps
-reaching the product application.
+to onboardd's private HTTP listener. Redirected public requests receive a minimal
+browser-handoff page; the complete setup application is available only through an
+explicit request to the private listener port. The rule uses a separately owned table
+and is removed with the captive lifecycle; traffic arriving through production
+interfaces keeps reaching the product application.
 
 ## Initial deployment baseline
 
@@ -179,18 +181,20 @@ permanently inaccessible.
 
 ## Application handoff
 
-Handoff is configured rather than product-specific. Before selecting a disruptive mode,
-the captive page offers a user-activated link that opens the setup service at a stable
-mDNS hostname and private listener port in a normal browser. The browser then keeps one
-origin while the hostname resolves to the provisioning, standalone, or infrastructure
-address on the current link. The service retains operation history in memory so polling
-can resume after the radio interruption.
+Handoff is configured rather than product-specific. Public port 80 serves a dedicated
+landing entry from the same compiled frontend as the main setup UI, with a user-activated
+link and a manual address fallback. The complete setup service runs at Avahi's existing,
+host-managed mDNS hostname and the private listener port. onboardd publishes only its
+HTTP service and never changes that hostname. A normal browser then keeps one origin
+while the hostname resolves to the provisioning, standalone, or infrastructure address
+on the current link. The service retains operation history in memory, and bounded
+browser requests retry after radio interruption.
 
-Standalone mode can lead directly to the application after the client joins the final
-AP. Products with a physical display may additionally show separate QR codes for joining
-the standalone Wi-Fi and opening the configured application/setup URL. Infrastructure
-mode requires the client to join the same network and rediscover the appliance through
-the mDNS hostname. A manual address remains available as a fallback.
+Before standalone mode replaces provisioning, the UI presents the final SSID and, when
+product policy permits it, the password, copy action, and Wi-Fi join QR. Application
+handoff uses ordinary links rather than a second QR. Infrastructure mode requires the
+client to join the same network and rediscover the appliance through the mDNS hostname.
+A manual address remains available as a fallback.
 
 The captive browser may close automatically when Internet connectivity returns, so the
 handoff flow must remain understandable even if the original portal page disappears.

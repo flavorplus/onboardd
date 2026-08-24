@@ -131,6 +131,21 @@ var environmentSetters = map[string]environmentSetter{
 		config.Portal.ListenerPort = uint16(port)
 		return nil
 	},
+	"ONBOARDD_HANDOFF_APPLICATION_LABEL": func(config *Config, value string) error {
+		config.Handoff.ApplicationLabel = value
+		return nil
+	},
+	"ONBOARDD_HANDOFF_APPLICATION_URL": func(config *Config, value string) error {
+		config.Handoff.ApplicationURL = value
+		return nil
+	},
+	"ONBOARDD_HANDOFF_HEALTH_CHECK_URL": func(config *Config, value string) error {
+		config.Handoff.HealthCheckURL = value
+		return nil
+	},
+	"ONBOARDD_HANDOFF_SHOW_STANDALONE_CREDENTIALS": booleanEnvironment(func(config *Config, value bool) {
+		config.Handoff.ShowStandaloneCredentials = value
+	}),
 }
 
 func applyEnvironment(config *Config, environment []string) error {

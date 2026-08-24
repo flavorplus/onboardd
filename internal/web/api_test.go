@@ -357,12 +357,16 @@ func waitForAPIState(t *testing.T, api *API, id string, state setup.OperationSta
 
 type fakeAPIBackend struct {
 	mu         sync.Mutex
+	mode       setup.Mode
 	connection setup.ConnectionRequest
 	networkErr error
 	release    chan struct{}
 }
 
 func (backend *fakeAPIBackend) CurrentMode(context.Context) (setup.Mode, error) {
+	if backend.mode != "" {
+		return backend.mode, nil
+	}
 	return setup.ModeSetup, nil
 }
 

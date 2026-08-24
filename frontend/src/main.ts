@@ -1,6 +1,9 @@
 import "./styles.css";
 
+import * as QRCode from "qrcode";
+
 import { APIError, SetupAPI } from "./api.ts";
+import { needsBrowserHandoff, wifiQRPayload } from "./handoff.ts";
 import {
   brandingPalette,
   initialView,
@@ -9,6 +12,7 @@ import {
   type Bootstrap,
   type Network,
   type Operation,
+  type StandaloneHandoff,
 } from "./model.ts";
 
 const appElement = document.querySelector<HTMLElement>("#app");
@@ -17,6 +21,7 @@ const app: HTMLElement = appElement;
 
 const api = new SetupAPI();
 let bootstrap: Bootstrap;
+let viewRevision = 0;
 
 void start();
 
@@ -50,6 +55,7 @@ function frame(options: {
   description: string;
   back?: () => void;
 }): HTMLElement {
+  viewRevision += 1;
   const shell = element("section", "setup-shell");
   const header = element("header", "setup-header");
   if (options.back) {
@@ -99,6 +105,8 @@ function showModeChoice(): void {
       ),
     );
   }
+  const handoff = normalBrowserHandoff();
+  if (handoff) content.append(handoff);
   content.append(choices, helpText("You can change this choice later."));
 }
 
@@ -148,6 +156,8 @@ async function showNetworks(): Promise<void> {
   });
   const status = textElement("p", "Looking for nearby networks…", "inline-status");
   status.setAttribute("role", "status");
+  const handoff = normalBrowserHandoff();
+  if (handoff) content.append(handoff);
   content.append(status);
   try {
     const networks = await api.networks();
@@ -293,6 +303,12 @@ function showStandaloneConfirmation(): void {
       showInlineError(content, messageFrom(error), showStandaloneConfirmation);
     }
   });
+  const handoff = normalBrowserHandoff();
+  if (handoff) content.append(handoff);
+  const standaloneDetails = bootstrap.handoff?.standalone;
+  if (standaloneDetails) {
+    content.append(standaloneHandoff(standaloneDetails, "prepare"));
+  }
   content.append(note, confirm);
 }
 
@@ -316,13 +332,14 @@ async function monitorOperation(initial: Operation): Promise<void> {
     progress,
     helpText(
       standalone
-        ? "If this window closes, join the standalone Wi-Fi and reopen device setup in your normal browser."
-        : "If this window closes, reconnect to your normal Wi-Fi and reopen setup from the device’s new network address.",
+        ? "Join the standalone Wi-Fi when it appears. This page will retry automatically."
+        : "Reconnect to your normal Wi-Fi if needed. This page will retry automatically.",
     ),
   );
 
   for (;;) {
     if (operation.state === "succeeded") {
+      await refreshHandoff();
       showComplete(operation);
       return;
     }
@@ -337,6 +354,24 @@ async function monitorOperation(initial: Operation): Promise<void> {
     } catch {
       status.textContent = "Waiting for the device to come back…";
     }
+  }
+}
+
+async function refreshHandoff(): Promise<void> {
+  const handoff = bootstrap.handoff;
+  const application = handoff?.application;
+  if (handoff && application) {
+    bootstrap.handoff = {
+      ...handoff,
+      application: { label: application.label, ready: false },
+    };
+  }
+  try {
+    const refreshed = await api.bootstrap();
+    bootstrap.handoff = refreshed.handoff;
+  } catch {
+    // The stable origin may still be reconnecting. The completion view continues
+    // polling and must not expose a destination whose health could not be confirmed.
   }
 }
 
@@ -371,9 +406,181 @@ function showComplete(operation: Operation): void {
   success.setAttribute("aria-hidden", "true");
   success.textContent = "✓";
   const actions = element("div", "row-actions");
+  const application = bootstrap.handoff?.application;
+  const standaloneDetails = standalone ? bootstrap.handoff?.standalone : undefined;
+  const applicationStatus = application && !application.ready
+    ? textElement("p", `${application.label} is still starting…`, "inline-status")
+    : undefined;
+  if (application?.ready && application.url) {
+    actions.append(
+      link(
+        application.label,
+        application.url,
+        "button button-primary",
+      ),
+    );
+  }
   actions.append(button("Change connection", "button button-secondary", showModeChoice));
   content.prepend(success);
-  content.append(actions, helpText("You can close this page."));
+  if (applicationStatus) content.append(applicationStatus);
+  if (standaloneDetails) {
+    content.append(standaloneHandoff(standaloneDetails, "ready"));
+  }
+  content.append(
+    actions,
+    helpText(
+      application
+        ? "Open the device application, or return to setup whenever you need to change the connection."
+        : "You can return to setup whenever you need to change the connection.",
+    ),
+  );
+  if (applicationStatus) {
+    void waitForApplication(viewRevision, applicationStatus, actions);
+  }
+}
+
+function standaloneHandoff(
+  details: StandaloneHandoff,
+  stage: "prepare" | "ready",
+): HTMLElement {
+  const section = element("section", "standalone-handoff");
+  section.append(
+    textElement(
+      "h2",
+      stage === "prepare" ? "Save the standalone Wi-Fi details" : "Connect another device",
+    ),
+    textElement(
+      "p",
+      details.password
+        ? stage === "prepare"
+          ? "Keep these details available before the setup Wi-Fi is replaced."
+          : "Scan the Wi-Fi code or join manually from another device."
+        : "Join the standalone Wi-Fi manually using the network name below.",
+      "handoff-description",
+    ),
+  );
+
+  const manual = element("dl", "handoff-details");
+  manual.append(detail("Wi-Fi name", details.ssid));
+  if (details.password) {
+    const passwordValue = element("span", "credential-value");
+    passwordValue.textContent = details.password;
+    const copy = button("Copy password", "button button-quiet copy-credential", () => {
+      void copyText(details.password ?? "").then((copied) => {
+        copy.textContent = copied ? "Password copied" : "Select and copy the password";
+      });
+    });
+    manual.append(detailNode("Password", passwordValue, copy));
+  }
+  section.append(manual);
+
+  if (details.password) {
+    const codes = element("div", "qr-grid qr-grid-single");
+    codes.append(qrCard("Join Wi-Fi", wifiQRPayload(details.ssid, details.password), details.ssid));
+    section.append(codes);
+  }
+  return section;
+}
+
+function detail(label: string, value: string): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  fragment.append(textElement("dt", label), textElement("dd", value));
+  return fragment;
+}
+
+function detailNode(label: string, ...values: Node[]): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  const description = element("dd", "credential-detail");
+  description.append(...values);
+  fragment.append(textElement("dt", label), description);
+  return fragment;
+}
+
+function qrCard(title: string, payload: string, caption: string): HTMLElement {
+  const card = element("article", "qr-card");
+  const canvas = document.createElement("canvas");
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", title);
+  const status = textElement("p", "Creating code…", "qr-status");
+  card.append(textElement("strong", title), canvas, status, textElement("small", caption));
+  void QRCode.toCanvas(canvas, payload, {
+    width: 196,
+    margin: 1,
+    errorCorrectionLevel: "M",
+    color: { dark: "#28151cff", light: "#ffffffff" },
+  }).then(() => status.remove()).catch(() => {
+    canvas.remove();
+    status.textContent = "QR code unavailable. Use the details above.";
+  });
+  return card;
+}
+
+async function waitForApplication(
+  revision: number,
+  status: HTMLElement,
+  actions: HTMLElement,
+): Promise<void> {
+  while (revision === viewRevision) {
+    await delay(2000);
+    try {
+      const refreshed = await api.bootstrap();
+      if (revision !== viewRevision) return;
+      bootstrap.handoff = refreshed.handoff;
+      const application = refreshed.handoff?.application;
+      if (application?.ready && application.url) {
+        actions.prepend(link(application.label, application.url, "button button-primary"));
+        status.textContent = `${application.label} is ready.`;
+        return;
+      }
+      status.textContent = application
+        ? `${application.label} is still starting…`
+        : "The application destination is not configured.";
+    } catch {
+      if (revision !== viewRevision) return;
+      status.textContent = "Waiting for the device application…";
+    }
+  }
+}
+
+function normalBrowserHandoff(): HTMLElement | undefined {
+  const setupURL = bootstrap.handoff?.setup_url;
+  if (!setupURL || !needsBrowserHandoff(window.location.href, setupURL)) return undefined;
+  const panel = element("aside", "handoff-panel");
+  panel.append(
+    textElement("strong", "Keep setup open during the switch"),
+    textElement(
+      "p",
+      "Open setup in your normal browser first. It can reconnect after this Wi-Fi connection changes.",
+    ),
+    link("Open setup in browser", setupURL, "button button-secondary"),
+  );
+  return panel;
+}
+
+async function copyText(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Plain HTTP and captive viewers often block the Clipboard API. Use the
+    // user-gesture fallback below when the older selection command is available.
+  }
+  const input = document.createElement("textarea");
+  input.value = value;
+  input.setAttribute("readonly", "");
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  document.body.append(input);
+  input.select();
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    input.remove();
+  }
 }
 
 function showLoadFailure(error: unknown): void {
@@ -473,6 +680,16 @@ function button(label: string, className: string, onClick: () => void): HTMLButt
   control.textContent = label;
   control.setAttribute("aria-label", label);
   control.addEventListener("click", onClick);
+  return control;
+}
+
+function link(label: string, href: string, className: string): HTMLAnchorElement {
+  const control = document.createElement("a");
+  control.className = className;
+  control.textContent = label;
+  control.href = href;
+  control.target = "_blank";
+  control.rel = "noopener noreferrer";
   return control;
 }
 

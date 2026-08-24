@@ -104,9 +104,32 @@ func TestResolveRejectsUnknownOnboarddEnvironmentVariable(t *testing.T) {
 	}
 }
 
+func TestResolveRejectsRemovedHandoffHostnameEnvironment(t *testing.T) {
+	_, err := Resolve(ResolveOptions{Environment: []string{"ONBOARDD_HANDOFF_HOSTNAME=display-player"}})
+	if err == nil || !strings.Contains(err.Error(), "ONBOARDD_HANDOFF_HOSTNAME") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestResolveRejectsInvalidEnvironmentValue(t *testing.T) {
 	_, err := Resolve(ResolveOptions{Environment: []string{"ONBOARDD_NETWORK_STANDALONE_ENABLED=maybe"}})
 	if err == nil || !strings.Contains(err.Error(), "must be true or false") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestResolveAppliesHandoffEnvironment(t *testing.T) {
+	resolved, err := Resolve(ResolveOptions{Environment: []string{
+		"ONBOARDD_HANDOFF_APPLICATION_LABEL=Open player",
+		"ONBOARDD_HANDOFF_APPLICATION_URL=http://display-player.local/",
+		"ONBOARDD_HANDOFF_HEALTH_CHECK_URL=http://127.0.0.1/health",
+		"ONBOARDD_HANDOFF_SHOW_STANDALONE_CREDENTIALS=true",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Handoff.ApplicationURL != "http://display-player.local/" ||
+		!resolved.Handoff.ShowStandaloneCredentials {
+		t.Fatalf("handoff = %+v", resolved.Handoff)
 	}
 }

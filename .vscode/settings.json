@@ -5,6 +5,8 @@
   "files.insertFinalNewline": true,
   "go.useLanguageServer": true,
   "go.testFlags": ["-count=1"],
+  "evenBetterToml.schema.cache.memoryExpiration": 0,
+  "evenBetterToml.schema.cache.diskExpiration": 0,
   "gopls": {
     "ui.semanticTokens": true,
     "formatting.gofumpt": false

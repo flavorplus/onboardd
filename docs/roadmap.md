@@ -181,7 +181,7 @@ forking or rebuilding the frontend.
 
 ## Phase 6 — Application handoff
 
-Status: next implementation boundary.
+Status: complete.
 
 Implement configurable labels and URLs, optional health checks, and mDNS discovery.
 Before a disruptive radio change, offer an explicit user-activated handoff from the
@@ -190,16 +190,29 @@ normal browser. Keep polling and operation history available at that origin acro
 provisioning, standalone, and infrastructure addresses. Automatic popup attempts are
 not the primary path because clients may block them or close the captive assistant.
 
-Add standalone handoff information suitable for a product display, including a Wi-Fi
-join QR code and an application/setup URL QR code when product policy permits displaying
-the standalone credential. Provide a manual URL fallback for clients without usable
-mDNS and transition guidance for infrastructure mode.
+Add standalone handoff information before the disruptive switch, including the SSID,
+copyable password, and Wi-Fi join QR when product policy permits displaying the
+standalone credential. Provide a manual stable-URL fallback for captive viewers that
+cannot open a normal browser and transition guidance for infrastructure mode.
+
+Implementation checklist:
+
+- [x] Define and validate the product handoff configuration contract.
+- [x] Derive the stable setup URL and expose only browser-safe handoff data.
+- [x] Offer an explicit normal-browser link before every disruptive mode transition.
+- [x] Present the configured application link and connection controls after success.
+- [x] Use the existing Avahi hostname and advertise the setup service on every active link.
+- [x] Gate the application link on its optional health check.
+- [x] Add pre-transition standalone Wi-Fi and join-QR handoff with the configured credential policy.
+- [x] Verify handoff and fallback behavior on Raspberry Pi hardware.
 
 Exit criterion: setup can reliably lead the user to a configured local application in
 both production modes, and closing the captive assistant does not discard observable
 operation progress.
 
 ## Phase 7 — Recovery and appliance reliability
+
+Status: next implementation boundary.
 
 Add transactional transitions/checkpoints, retry policies, optional GPIO recovery,
 manual setup activation, boot reconciliation hardening, watchdog behavior, log

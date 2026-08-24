@@ -41,6 +41,9 @@ func RenderTemplates(config Config, identity Identity) (Config, error) {
 		{"branding.text.title", &rendered.Branding.Text.Title},
 		{"branding.text.subtitle", &rendered.Branding.Text.Subtitle},
 		{"network.provisioning.ssid", &rendered.Network.Provisioning.SSID},
+		{"handoff.application_label", &rendered.Handoff.ApplicationLabel},
+		{"handoff.application_url", &rendered.Handoff.ApplicationURL},
+		{"handoff.health_check_url", &rendered.Handoff.HealthCheckURL},
 	}
 	if rendered.Network.StandaloneEnabled {
 		fields = append(fields, struct {
@@ -62,6 +65,9 @@ func RenderTemplates(config Config, identity Identity) (Config, error) {
 		if err := validateSSID("network.standalone.ssid", rendered.Network.Standalone.SSID); err != nil {
 			return Config{}, err
 		}
+	}
+	if err := validateHandoff(rendered.Handoff, true); err != nil {
+		return Config{}, err
 	}
 	return rendered, nil
 }

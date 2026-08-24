@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	appconfig "github.com/flavorplus/onboardd/internal/config"
+	"github.com/flavorplus/onboardd/internal/handoff"
 )
 
 func TestOptionsFromRenderedConfiguration(t *testing.T) {
@@ -23,7 +25,7 @@ func TestOptionsFromRenderedConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options, err := OptionsFromConfig(rendered)
+	options, err := OptionsFromConfig(rendered, "inkypi")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +59,101 @@ func TestAPISetupIncludesConfiguredBranding(t *testing.T) {
 	}
 	if strings.Contains(response.Body.String(), "logo_url") {
 		t.Fatalf("logo URL present without configured logo: %s", response.Body.String())
+	}
+}
+
+func TestAPISetupIncludesBrowserSafeHandoff(t *testing.T) {
+	info := handoff.Info{
+		SetupURL:                  "http://inkypi.local:18080/",
+		Application:               &handoff.Application{Label: "Open InkyPi", URL: "http://inkypi.local/"},
+		HealthCheckURL:            "http://127.0.0.1/health",
+		ShowStandaloneCredentials: true,
+	}
+	api, _, _ := newTestAPIWithOptions(t, Options{
+		Branding:      DefaultBranding(),
+		Handoff:       &info,
+		HealthChecker: fixedReadiness(true),
+	})
+	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
+	response := httptest.NewRecorder()
+	api.ServeHTTP(response, request)
+
+	body := response.Body.String()
+	for _, expected := range []string{
+		`"setup_url":"http://inkypi.local:18080/"`,
+		`"label":"Open InkyPi"`,
+		`"url":"http://inkypi.local/"`,
+		`"ready":true`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Errorf("response does not contain %q: %s", expected, body)
+		}
+	}
+	for _, serverOnly := range []string{"health", "show_standalone_credentials"} {
+		if strings.Contains(body, serverOnly) {
+			t.Errorf("response exposes server-only handoff field %q: %s", serverOnly, body)
+		}
+	}
+}
+
+func TestAPISetupGatesUnhealthyApplicationURL(t *testing.T) {
+	info := handoff.Info{
+		SetupURL:       "http://inkypi.local:18080/",
+		Application:    &handoff.Application{Label: "Open InkyPi", URL: "http://inkypi.local/"},
+		HealthCheckURL: "http://127.0.0.1/health",
+	}
+	api, _, _ := newTestAPIWithOptions(t, Options{
+		Branding:      DefaultBranding(),
+		Handoff:       &info,
+		HealthChecker: fixedReadiness(false),
+	})
+	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
+	response := httptest.NewRecorder()
+	api.ServeHTTP(response, request)
+
+	body := response.Body.String()
+	if !strings.Contains(body, `"application":{"label":"Open InkyPi","ready":false}`) {
+		t.Fatalf("response does not contain gated application: %s", body)
+	}
+	if strings.Contains(body, "http://inkypi.local/\"") || strings.Contains(body, "health") {
+		t.Fatalf("response exposed an unavailable destination or health policy: %s", body)
+	}
+}
+
+func TestAPISetupExposesStandaloneHandoffBeforeTransition(t *testing.T) {
+	info := handoff.Info{
+		SetupURL:                  "http://inkypi.local:18080/",
+		Standalone:                &handoff.Standalone{SSID: "InkyPi-AB12CD34", Password: "private-password"},
+		ShowStandaloneCredentials: true,
+	}
+	api, _, _ := newTestAPIWithOptions(t, Options{Branding: DefaultBranding(), Handoff: &info})
+
+	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
+	response := httptest.NewRecorder()
+	api.ServeHTTP(response, request)
+	for _, expected := range []string{
+		`"standalone":{"ssid":"InkyPi-AB12CD34","password":"private-password"}`,
+	} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("setup response does not contain %q: %s", expected, response.Body.String())
+		}
+	}
+}
+
+func TestAPISetupHonorsStandaloneCredentialPolicy(t *testing.T) {
+	info := handoff.Info{
+		SetupURL:   "http://inkypi.local:18080/",
+		Standalone: &handoff.Standalone{SSID: "InkyPi-AB12CD34", Password: "private-password"},
+	}
+	api, _, _ := newTestAPIWithOptions(t, Options{Branding: DefaultBranding(), Handoff: &info})
+	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
+	response := httptest.NewRecorder()
+	api.ServeHTTP(response, request)
+
+	body := response.Body.String()
+	if !strings.Contains(body, `"standalone":{"ssid":"InkyPi-AB12CD34"}`) ||
+		strings.Contains(body, "private-password") {
+		t.Fatalf("credential policy response = %s", body)
 	}
 }
 
@@ -123,4 +220,10 @@ func TestNewAPIRejectsInvalidBranding(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "device names") {
 		t.Fatalf("error = %v", err)
 	}
+}
+
+type fixedReadiness bool
+
+func (ready fixedReadiness) Ready(context.Context, string) bool {
+	return bool(ready)
 }

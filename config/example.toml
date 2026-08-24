@@ -49,3 +49,14 @@ address = "10.42.0.1/24"
 [portal]
 # Private setup listener. Port 80 remains fixed for captive-portal detection and redirects.
 listener_port = 18080
+
+[handoff]
+# onboardd reads the existing hostname from Avahi and never changes it. The .Hostname
+# template below is that host-managed name; onboardd appends .local for its setup URL.
+# Optional product application link. Configure both fields together or leave both empty.
+application_label = "Open {{ .ProductName }}"
+application_url = "http://{{ .Hostname }}.local/"
+# Optional readiness endpoint checked by onboardd before presenting the application link.
+health_check_url = "http://127.0.0.1/health"
+# Show the standalone password and Wi-Fi join QR before and after the mode switch.
+show_standalone_credentials = false

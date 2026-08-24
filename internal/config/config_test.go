@@ -67,6 +67,18 @@ accent_color = "#123456"
 	}
 }
 
+func TestDecodeRejectsRemovedHandoffHostname(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+schema_version = 1
+
+[handoff]
+hostname = "display-player"
+`))
+	if err == nil || !strings.Contains(err.Error(), "handoff.hostname") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestDecodeRejectsDisabledProductionModes(t *testing.T) {
 	_, err := Decode(strings.NewReader(`
 schema_version = 1
@@ -112,6 +124,56 @@ schema_version = 1
 listener_port = 80
 `))
 	if err == nil || !strings.Contains(err.Error(), "fixed captive public port") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestDecodeRejectsIncompleteApplicationHandoff(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+schema_version = 1
+
+[handoff]
+application_label = "Open player"
+`))
+	if err == nil || !strings.Contains(err.Error(), "configured together") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestDecodeRejectsWhitespaceOnlyApplicationHandoff(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+schema_version = 1
+
+[handoff]
+application_label = "   "
+application_url = "http://device.local/"
+`))
+	if err == nil || !strings.Contains(err.Error(), "configured together") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestDecodeRejectsHealthCheckWithoutApplication(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+schema_version = 1
+
+[handoff]
+health_check_url = "http://127.0.0.1/health"
+`))
+	if err == nil || !strings.Contains(err.Error(), "requires handoff.application_url") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestDecodeRejectsInvalidStaticHandoffURL(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+schema_version = 1
+
+[handoff]
+application_label = "Open player"
+application_url = "file:///etc/passwd"
+`))
+	if err == nil || !strings.Contains(err.Error(), "absolute HTTP or HTTPS") {
 		t.Fatalf("error = %v", err)
 	}
 }

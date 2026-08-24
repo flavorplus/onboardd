@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	appconfig "github.com/flavorplus/onboardd/internal/config"
+	"github.com/flavorplus/onboardd/internal/handoff"
 )
 
 const logoURL = "/api/v1/branding/logo"
@@ -30,13 +31,15 @@ type brandingResponse struct {
 // Options supplies product presentation without coupling the HTTP package to the TOML
 // loader. The production startup path builds this after template rendering.
 type Options struct {
-	Branding Branding
-	Logo     *Logo
+	Branding      Branding
+	Logo          *Logo
+	Handoff       *handoff.Info
+	HealthChecker handoff.ReadinessChecker
 }
 
 // OptionsFromConfig converts an already resolved and rendered product configuration
 // into HTTP options and loads its optional logo before the server starts.
-func OptionsFromConfig(config appconfig.Config) (Options, error) {
+func OptionsFromConfig(config appconfig.Config, hostname string) (Options, error) {
 	options := Options{Branding: Branding{
 		ProductName:     config.Product.Name,
 		DeviceName:      config.Product.DeviceName,
@@ -45,6 +48,12 @@ func OptionsFromConfig(config appconfig.Config) (Options, error) {
 		PrimaryColor:    config.Branding.PrimaryColor,
 		BackgroundColor: config.Branding.BackgroundColor,
 	}}
+	handoffInfo, err := handoff.FromConfig(config, hostname)
+	if err != nil {
+		return Options{}, err
+	}
+	options.Handoff = &handoffInfo
+	options.HealthChecker = handoff.NewHealthChecker()
 	if config.Branding.Logo == "" {
 		return options, nil
 	}
@@ -68,29 +77,38 @@ func DefaultBranding() Branding {
 	}
 }
 
-func resolveAPIOptions(options []Options) (brandingResponse, *Logo, error) {
+func resolveAPIOptions(
+	options []Options,
+) (brandingResponse, *Logo, *handoff.Info, handoff.ReadinessChecker, error) {
 	if len(options) > 1 {
-		return brandingResponse{}, nil, errors.New("only one setup API options value is allowed")
+		return brandingResponse{}, nil, nil, nil, errors.New("only one setup API options value is allowed")
 	}
 	branding := DefaultBranding()
 	var logo *Logo
+	var handoffInfo *handoff.Info
+	var healthChecker handoff.ReadinessChecker
 	if len(options) == 1 {
 		branding = options[0].Branding
 		logo = options[0].Logo
+		handoffInfo = options[0].Handoff
+		healthChecker = options[0].HealthChecker
 	}
 	if strings.TrimSpace(branding.ProductName) == "" || strings.TrimSpace(branding.DeviceName) == "" {
-		return brandingResponse{}, nil, errors.New("branding product and device names are required")
+		return brandingResponse{}, nil, nil, nil, errors.New("branding product and device names are required")
 	}
 	if strings.TrimSpace(branding.Title) == "" {
-		return brandingResponse{}, nil, errors.New("branding title is required")
+		return brandingResponse{}, nil, nil, nil, errors.New("branding title is required")
 	}
 	if !brandingColorPattern.MatchString(branding.PrimaryColor) ||
 		!brandingColorPattern.MatchString(branding.BackgroundColor) {
-		return brandingResponse{}, nil, errors.New("branding colors must be six-digit hexadecimal values")
+		return brandingResponse{}, nil, nil, nil, errors.New("branding colors must be six-digit hexadecimal values")
 	}
 	response := brandingResponse{Branding: branding}
 	if logo != nil {
 		response.LogoURL = logoURL
 	}
-	return response, logo, nil
+	if handoffInfo != nil && handoffInfo.HealthCheckURL != "" && healthChecker == nil {
+		healthChecker = handoff.NewHealthChecker()
+	}
+	return response, logo, handoffInfo, healthChecker, nil
 }

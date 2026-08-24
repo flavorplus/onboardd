@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -28,7 +29,9 @@ const (
 	CaptivePublicPort uint16 = 80
 )
 
-var colorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+var (
+	colorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+)
 
 // Config is the complete resolved onboardd configuration.
 type Config struct {
@@ -37,6 +40,7 @@ type Config struct {
 	Branding      Branding `toml:"branding"`
 	Network       Network  `toml:"network"`
 	Portal        Portal   `toml:"portal"`
+	Handoff       Handoff  `toml:"handoff"`
 }
 
 type Product struct {
@@ -80,6 +84,15 @@ type Portal struct {
 	ListenerPort uint16 `toml:"listener_port"`
 }
 
+// Handoff configures the optional product application destination. The stable setup
+// hostname is read from the host's Avahi daemon and is deliberately not configurable.
+type Handoff struct {
+	ApplicationLabel          string `toml:"application_label"`
+	ApplicationURL            string `toml:"application_url"`
+	HealthCheckURL            string `toml:"health_check_url"`
+	ShowStandaloneCredentials bool   `toml:"show_standalone_credentials"`
+}
+
 // Defaults returns the safe product-neutral values used before later sources overlay
 // them. Password paths contain no secret data and are only opened by the runtime.
 func Defaults() Config {
@@ -112,7 +125,8 @@ func Defaults() Config {
 				Address:      "10.42.0.1/24",
 			},
 		},
-		Portal: Portal{ListenerPort: 18080},
+		Portal:  Portal{ListenerPort: 18080},
+		Handoff: Handoff{},
 	}
 }
 
@@ -180,7 +194,10 @@ func (config Config) Validate() error {
 	if err := validateNetwork(config.Network); err != nil {
 		return err
 	}
-	return validatePortal(config.Portal)
+	if err := validatePortal(config.Portal); err != nil {
+		return err
+	}
+	return validateHandoff(config.Handoff, false)
 }
 
 func validateBranding(branding Branding) error {
@@ -249,6 +266,42 @@ func validatePortal(portal Portal) error {
 	}
 	if portal.ListenerPort == CaptivePublicPort {
 		return fmt.Errorf("portal.listener_port must differ from the fixed captive public port %d", CaptivePublicPort)
+	}
+	return nil
+}
+
+func validateHandoff(handoff Handoff, rendered bool) error {
+	applicationLabel := strings.TrimSpace(handoff.ApplicationLabel)
+	applicationURL := strings.TrimSpace(handoff.ApplicationURL)
+	if (applicationLabel == "") != (applicationURL == "") {
+		return errors.New("handoff.application_label and handoff.application_url must be configured together")
+	}
+	if strings.TrimSpace(handoff.HealthCheckURL) != "" && applicationURL == "" {
+		return errors.New("handoff.health_check_url requires handoff.application_url")
+	}
+	if strings.ContainsAny(handoff.ApplicationLabel, "\r\n") {
+		return errors.New("handoff.application_label must not contain line breaks")
+	}
+	if handoff.ApplicationURL != "" && (rendered || !strings.Contains(handoff.ApplicationURL, "{{")) {
+		if err := validateHTTPURL("handoff.application_url", handoff.ApplicationURL); err != nil {
+			return err
+		}
+	}
+	if handoff.HealthCheckURL != "" && (rendered || !strings.Contains(handoff.HealthCheckURL, "{{")) {
+		if err := validateHTTPURL("handoff.health_check_url", handoff.HealthCheckURL); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateHTTPURL(name, value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return fmt.Errorf("%s must be an absolute HTTP or HTTPS URL", name)
+	}
+	if parsed.User != nil || parsed.Fragment != "" {
+		return fmt.Errorf("%s must not contain credentials or a fragment", name)
 	}
 	return nil
 }

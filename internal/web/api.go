@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/flavorplus/onboardd/internal/handoff"
 	"github.com/flavorplus/onboardd/internal/setup"
 )
 
@@ -38,6 +39,8 @@ type API struct {
 	canonicalOrigin string
 	csrfToken       string
 	branding        brandingResponse
+	handoff         *handoff.Info
+	healthChecker   handoff.ReadinessChecker
 	logo            *Logo
 	mux             *http.ServeMux
 }
@@ -51,7 +54,7 @@ func NewAPI(service setupService, canonicalOrigin string, options ...Options) (*
 	if err != nil {
 		return nil, err
 	}
-	branding, logo, err := resolveAPIOptions(options)
+	branding, logo, handoffInfo, healthChecker, err := resolveAPIOptions(options)
 	if err != nil {
 		return nil, err
 	}
@@ -64,6 +67,8 @@ func NewAPI(service setupService, canonicalOrigin string, options ...Options) (*
 		canonicalOrigin: origin,
 		csrfToken:       hex.EncodeToString(tokenBytes),
 		branding:        branding,
+		handoff:         handoffInfo,
+		healthChecker:   healthChecker,
 		logo:            logo,
 		mux:             http.NewServeMux(),
 	}
@@ -96,6 +101,24 @@ type setupResponse struct {
 	setup.Bootstrap
 	CSRFToken string           `json:"csrf_token"`
 	Branding  brandingResponse `json:"branding"`
+	Handoff   *handoffResponse `json:"handoff,omitempty"`
+}
+
+type handoffResponse struct {
+	SetupURL    string               `json:"setup_url"`
+	Application *applicationResponse `json:"application,omitempty"`
+	Standalone  *standaloneResponse  `json:"standalone,omitempty"`
+}
+
+type applicationResponse struct {
+	Label string `json:"label"`
+	URL   string `json:"url,omitempty"`
+	Ready bool   `json:"ready"`
+}
+
+type standaloneResponse struct {
+	SSID     string `json:"ssid"`
+	Password string `json:"password,omitempty"`
 }
 
 func (api *API) getSetup(response http.ResponseWriter, request *http.Request) {
@@ -108,7 +131,42 @@ func (api *API) getSetup(response http.ResponseWriter, request *http.Request) {
 		Bootstrap: bootstrap,
 		CSRFToken: api.csrfToken,
 		Branding:  api.branding,
+		Handoff: browserHandoff(
+			request.Context(),
+			api.handoff,
+			api.healthChecker,
+		),
 	})
+}
+
+func browserHandoff(
+	ctx context.Context,
+	info *handoff.Info,
+	checker handoff.ReadinessChecker,
+) *handoffResponse {
+	if info == nil {
+		return nil
+	}
+	response := &handoffResponse{SetupURL: info.SetupURL}
+	if info.Application != nil {
+		ready := info.HealthCheckURL == "" || (checker != nil && checker.Ready(ctx, info.HealthCheckURL))
+		response.Application = &applicationResponse{
+			Label: info.Application.Label,
+			Ready: ready,
+		}
+		if ready {
+			response.Application.URL = info.Application.URL
+		}
+	}
+	if info.Standalone != nil {
+		response.Standalone = &standaloneResponse{
+			SSID: info.Standalone.SSID,
+		}
+		if info.ShowStandaloneCredentials {
+			response.Standalone.Password = info.Standalone.Password
+		}
+	}
+	return response
 }
 
 func (api *API) getLogo(response http.ResponseWriter, _ *http.Request) {

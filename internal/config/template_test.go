@@ -13,6 +13,9 @@ func TestRenderTemplatesUsesOnlyDocumentedValues(t *testing.T) {
 	configured.Branding.Text.Subtitle = "Open {{.Hostname}} when setup finishes."
 	configured.Network.Provisioning.SSID = "{{ .ProductName }}-Setup-{{ .DeviceID }}"
 	configured.Network.Standalone.SSID = "{{.DeviceName}}-{{.DeviceID}}"
+	configured.Handoff.ApplicationLabel = "Open {{ .ProductName }}"
+	configured.Handoff.ApplicationURL = "http://{{ .Hostname }}.local/"
+	configured.Handoff.HealthCheckURL = "http://127.0.0.1/{{ .DeviceID }}/health"
 
 	rendered, err := RenderTemplates(configured, Identity{DeviceID: "AB12CD34", Hostname: "inkypi"})
 	if err != nil {
@@ -23,12 +26,18 @@ func TestRenderTemplatesUsesOnlyDocumentedValues(t *testing.T) {
 		"subtitle":          rendered.Branding.Text.Subtitle,
 		"provisioning SSID": rendered.Network.Provisioning.SSID,
 		"standalone SSID":   rendered.Network.Standalone.SSID,
+		"application label": rendered.Handoff.ApplicationLabel,
+		"application URL":   rendered.Handoff.ApplicationURL,
+		"health URL":        rendered.Handoff.HealthCheckURL,
 	}
 	want := map[string]string{
 		"title":             "Set up Kitchen",
 		"subtitle":          "Open inkypi when setup finishes.",
 		"provisioning SSID": "InkyPi-Setup-AB12CD34",
 		"standalone SSID":   "Kitchen-AB12CD34",
+		"application label": "Open InkyPi",
+		"application URL":   "http://inkypi.local/",
+		"health URL":        "http://127.0.0.1/AB12CD34/health",
 	}
 	for name, value := range checks {
 		if value != want[name] {

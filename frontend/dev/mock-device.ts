@@ -104,11 +104,24 @@ export class MockDevice {
 
   private bootstrap(now: number): Bootstrap {
     const operation = this.operationSnapshot(now);
+    const applicationReady = !this.operation ||
+      (operation?.state === "succeeded" && now - this.operation.startedAt >= 5000);
     return {
       branding: this.branding,
       capabilities: this.capabilities,
       current_mode: this.currentMode,
       operation,
+      handoff: {
+        setup_url: "http://127.0.0.1:5173/",
+        application: {
+          label: `Open ${this.branding.product_name}`,
+          url: applicationReady ? "http://device.local/" : undefined,
+          ready: applicationReady,
+        },
+        standalone: this.capabilities.standalone
+          ? { ssid: "Device-AB12CD34", password: "standalone-password" }
+          : undefined,
+      },
       csrf_token: mockCSRFToken,
     };
   }

@@ -83,8 +83,8 @@ Hardware testing confirmed that operating systems may close their captive mini-b
 as soon as the provisioning AP disappears. A persistent follow-up experience therefore
 uses an explicit, user-activated link to open the stable mDNS setup address in a normal
 browser before the radio transition. Automatic `window.open()` is only a progressive
-enhancement, not a required path. Phase 6 implements the configurable hostname,
-discovery, application link, and standalone QR handoff.
+enhancement, not a required path. Phase 6 uses the host-managed Avahi hostname and
+implements discovery, the application link, and standalone QR handoff.
 
 ## Resolve before the relevant later phase
 

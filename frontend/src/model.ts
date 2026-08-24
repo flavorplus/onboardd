@@ -47,11 +47,29 @@ export interface Operation {
   failure?: Failure;
 }
 
+export interface ApplicationHandoff {
+  label: string;
+  url?: string;
+  ready: boolean;
+}
+
+export interface Handoff {
+  setup_url: string;
+  application?: ApplicationHandoff;
+  standalone?: StandaloneHandoff;
+}
+
+export interface StandaloneHandoff {
+  ssid: string;
+  password?: string;
+}
+
 export interface Bootstrap {
   branding: Branding;
   capabilities: Capabilities;
   current_mode: Mode;
   operation?: Operation;
+  handoff?: Handoff;
   csrf_token: string;
 }
 

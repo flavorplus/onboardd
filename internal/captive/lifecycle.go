@@ -36,6 +36,8 @@ type StartOptions struct {
 	PublicHTTPPort   uint16
 	ListenerHTTPPort uint16
 	PortalURL        string
+	SetupURL         string
+	LandingPage      []byte
 }
 
 // Lifecycle coordinates temporary AP, DNS, and HTTP resources.
@@ -77,7 +79,13 @@ func (lifecycle *Lifecycle) Start(
 	if err := validateStartOptions(options); err != nil {
 		return nil, err
 	}
-	handler, err := NewHTTPHandler(options.PortalURL, options.ListenerHTTPPort, portal)
+	handler, err := NewHTTPHandler(
+		options.PortalURL,
+		options.SetupURL,
+		options.ListenerHTTPPort,
+		options.LandingPage,
+		portal,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -1,0 +1,40 @@
+# Phase 6 acceptance fixture: healthy application and visible standalone credentials.
+schema_version = 1
+
+[product]
+name = "Onboardd"
+device_name = "Phase 6 display"
+
+[branding]
+primary_color = "#cd2455"
+background_color = "#f8eff3"
+
+[branding.text]
+title = "Set up {{ .DeviceName }}"
+subtitle = "Verify browser handoff across every network mode."
+
+[network]
+interface = "wlan0"
+requirement = "local"
+infrastructure_enabled = true
+standalone_enabled = true
+
+[network.provisioning]
+ssid = "Onboardd-Setup-{{ .DeviceID }}"
+password_file = "/etc/onboardd/provisioning-password"
+
+[network.standalone]
+ssid = "Onboardd-Standalone-{{ .DeviceID }}"
+password_file = "/etc/onboardd/standalone-password"
+address = "10.42.0.1/24"
+
+[portal]
+listener_port = 18080
+
+[handoff]
+application_label = "Open InkyPi"
+# .Hostname is read from Avahi and remains owned by the host.
+application_url = "http://{{ .Hostname }}.local/"
+# The acceptance Pi already serves InkyPi on port 80.
+health_check_url = "http://127.0.0.1/"
+show_standalone_credentials = true

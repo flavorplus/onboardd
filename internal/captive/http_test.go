@@ -8,11 +8,19 @@ import (
 	"testing"
 )
 
+var testLandingPage = []byte(`<!doctype html><a href="__ONBOARDD_SETUP_URL__">Continue in your browser</a>`)
+
 func TestHTTPHandlerRedirectsCaptiveProbeRequests(t *testing.T) {
 	portal := http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		t.Fatal("probe request unexpectedly reached portal handler")
 	})
-	handler, err := NewHTTPHandler("http://setup.local/", 18080, portal)
+	handler, err := NewHTTPHandler(
+		"http://setup.local/",
+		"http://device.local:18080/",
+		18080,
+		testLandingPage,
+		portal,
+	)
 	if err != nil {
 		t.Fatalf("NewHTTPHandler() error = %v", err)
 	}
@@ -52,28 +60,32 @@ func TestHTTPHandlerRedirectsCaptiveProbeRequests(t *testing.T) {
 	}
 }
 
-func TestHTTPHandlerDelegatesCanonicalPortalHost(t *testing.T) {
-	var receivedPath string
-	portal := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		receivedPath = request.URL.RequestURI()
-		response.Header().Set("Content-Type", "text/plain")
-		response.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(response, "setup")
+func TestHTTPHandlerServesMinimalLandingOnCanonicalPortalHost(t *testing.T) {
+	portal := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("canonical public request unexpectedly reached full setup")
 	})
-	handler, err := NewHTTPHandler("http://Setup.Local:80/", 18080, portal)
+	handler, err := NewHTTPHandler(
+		"http://Setup.Local:80/",
+		"http://device.local:18080/",
+		18080,
+		testLandingPage,
+		portal,
+	)
 	if err != nil {
 		t.Fatalf("NewHTTPHandler() error = %v", err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "http://setup.local./networks?page=2", nil)
+	request := httptest.NewRequest(http.MethodGet, "http://setup.local./", nil)
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
 
-	if response.Code != http.StatusOK || response.Body.String() != "setup" {
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), "Continue in your browser") ||
+		!strings.Contains(response.Body.String(), "http://device.local:18080/") {
 		t.Fatalf("portal response = status %d body %q", response.Code, response.Body.String())
 	}
-	if receivedPath != "/networks?page=2" {
-		t.Fatalf("portal received path = %q", receivedPath)
+	if response.Header().Get("Content-Security-Policy") == "" {
+		t.Fatal("landing page is missing its content security policy")
 	}
 	assertNoCacheHeaders(t, response.Header())
 }
@@ -83,7 +95,13 @@ func TestHTTPHandlerDelegatesDirectListenerAddresses(t *testing.T) {
 		response.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(response, "setup")
 	})
-	handler, err := NewHTTPHandler("http://10.42.0.1/", 18080, portal)
+	handler, err := NewHTTPHandler(
+		"http://10.42.0.1/",
+		"http://device.local:18080/",
+		18080,
+		testLandingPage,
+		portal,
+	)
 	if err != nil {
 		t.Fatalf("NewHTTPHandler() error = %v", err)
 	}
@@ -105,21 +123,52 @@ func TestHTTPHandlerDelegatesDirectListenerAddresses(t *testing.T) {
 	}
 }
 
+func TestHTTPHandlerServesLandingAssetsFromSharedFrontend(t *testing.T) {
+	portal := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/assets/styles.css" {
+			t.Fatalf("asset path = %q", request.URL.Path)
+		}
+		_, _ = io.WriteString(response, "shared styles")
+	})
+	handler, err := NewHTTPHandler(
+		"http://10.42.0.1/",
+		"http://device.local:18080/",
+		18080,
+		testLandingPage,
+		portal,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "http://10.42.0.1/assets/styles.css", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || response.Body.String() != "shared styles" {
+		t.Fatalf("asset response = %d %q", response.Code, response.Body.String())
+	}
+}
+
 func TestNewHTTPHandlerValidatesConfiguration(t *testing.T) {
 	portal := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	tests := []struct {
 		name      string
 		portalURL string
+		setupURL  string
 		portal    http.Handler
 		want      string
 	}{
-		{name: "missing handler", portalURL: "http://setup.local/", want: "portal handler is required"},
-		{name: "missing listener port", portalURL: "http://setup.local/", portal: portal, want: "listener port is required"},
-		{name: "relative URL", portalURL: "/setup", portal: portal, want: "scheme must be http"},
-		{name: "HTTPS interception", portalURL: "https://setup.local/", portal: portal, want: "scheme must be http"},
-		{name: "missing host", portalURL: "http:///setup", portal: portal, want: "must include a host"},
-		{name: "user information", portalURL: "http://user@setup.local/", portal: portal, want: "must not include user information"},
-		{name: "fragment", portalURL: "http://setup.local/#setup", portal: portal, want: "must not include a fragment"},
+		{name: "missing handler", portalURL: "http://setup.local/", setupURL: "http://device.local:18080/", want: "portal handler is required"},
+		{name: "missing listener port", portalURL: "http://setup.local/", setupURL: "http://device.local:18080/", portal: portal, want: "listener port is required"},
+		{name: "relative portal URL", portalURL: "/setup", setupURL: "http://device.local:18080/", portal: portal, want: "scheme must be http"},
+		{name: "HTTPS interception", portalURL: "https://setup.local/", setupURL: "http://device.local:18080/", portal: portal, want: "scheme must be http"},
+		{name: "missing portal host", portalURL: "http:///setup", setupURL: "http://device.local:18080/", portal: portal, want: "must include a host"},
+		{name: "portal user information", portalURL: "http://user@setup.local/", setupURL: "http://device.local:18080/", portal: portal, want: "must not include user information"},
+		{name: "portal fragment", portalURL: "http://setup.local/#setup", setupURL: "http://device.local:18080/", portal: portal, want: "must not include a fragment"},
+		{name: "relative setup URL", portalURL: "http://setup.local/", setupURL: "/setup", portal: portal, want: "setup URL must be an absolute HTTP URL"},
+		{name: "setup query", portalURL: "http://setup.local/", setupURL: "http://device.local:18080/?mode=setup", portal: portal, want: "setup URL must not include"},
+		{name: "missing landing page placeholder", portalURL: "http://setup.local/", setupURL: "http://device.local:18080/", portal: portal, want: "missing the setup URL placeholder"},
 	}
 
 	for _, test := range tests {
@@ -128,7 +177,11 @@ func TestNewHTTPHandlerValidatesConfiguration(t *testing.T) {
 			if test.name == "missing listener port" {
 				listenerPort = 0
 			}
-			_, err := NewHTTPHandler(test.portalURL, listenerPort, test.portal)
+			landingPage := testLandingPage
+			if test.name == "missing landing page placeholder" {
+				landingPage = []byte("missing")
+			}
+			_, err := NewHTTPHandler(test.portalURL, test.setupURL, listenerPort, landingPage, test.portal)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("NewHTTPHandler() error = %v, want containing %q", err, test.want)
 			}
@@ -139,7 +192,9 @@ func TestNewHTTPHandlerValidatesConfiguration(t *testing.T) {
 func TestHTTPHandlerPreservesHEADSemantics(t *testing.T) {
 	handler, err := NewHTTPHandler(
 		"http://setup.local/",
+		"http://device.local:18080/",
 		18080,
+		testLandingPage,
 		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
 	)
 	if err != nil {

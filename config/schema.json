@@ -1,6 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/flavorplus/onboardd/config/schema.json",
   "title": "onboardd configuration",
   "type": "object",
   "additionalProperties": false,
@@ -59,6 +58,16 @@
           "maximum": 65535,
           "not": { "const": 80 }
         }
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "application_label": { "type": "string" },
+        "application_url": { "type": "string" },
+        "health_check_url": { "type": "string" },
+        "show_standalone_credentials": { "type": "boolean" }
       }
     }
   },
