@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	ownerKey  = "onboardd.owner"
-	roleKey   = "onboardd.role"
-	schemaKey = "onboardd.schema"
-	ownerName = "onboardd"
+	ownerKey   = "onboardd.owner"
+	roleKey    = "onboardd.role"
+	schemaKey  = "onboardd.schema"
+	pendingKey = "onboardd.pending"
+	ownerName  = "onboardd"
 )
 
 // Settings is NetworkManager's a{sa{sv}} connection representation.
@@ -32,6 +33,7 @@ type InfrastructureOptions struct {
 	Hidden      bool
 	Autoconnect bool
 	Priority    int32
+	Pending     bool
 }
 
 // AccessPointOptions configures a managed provisioning or standalone access point.
@@ -97,7 +99,7 @@ func BuildInfrastructureSettings(options InfrastructureOptions) (Settings, strin
 		"ipv6": variants(map[string]any{
 			"method": "auto",
 		}),
-		"user": metadata(RoleInfrastructure),
+		"user": metadata(RoleInfrastructure, options.Pending),
 	}
 
 	if !options.Open {
@@ -178,7 +180,7 @@ func BuildAccessPointSettings(options AccessPointOptions) (Settings, string, err
 		"ipv6": variants(map[string]any{
 			"method": "disabled",
 		}),
-		"user": metadata(options.Role),
+		"user": metadata(options.Role, false),
 	}
 
 	return settings, uuid, nil
@@ -220,6 +222,9 @@ func rebuildOwnedSettings(
 			Hidden:      variantBoolDefault(wireless["hidden"], false),
 			Autoconnect: autoconnect,
 			Priority:    profile.Priority,
+			// An autoconnect update is the durable commit point for a validated
+			// candidate, so the rebuilt profile deliberately drops Pending.
+			Pending: false,
 		})
 		return settings, err
 	case RoleStandalone:
@@ -271,14 +276,16 @@ func profileAddress(settings Settings) (string, error) {
 	return fmt.Sprintf("%s/%d", address, prefix), nil
 }
 
-func metadata(role Role) map[string]dbus.Variant {
-	return variants(map[string]any{
-		"data": map[string]string{
-			ownerKey:  ownerName,
-			roleKey:   string(role),
-			schemaKey: "1",
-		},
-	})
+func metadata(role Role, pending bool) map[string]dbus.Variant {
+	data := map[string]string{
+		ownerKey:  ownerName,
+		roleKey:   string(role),
+		schemaKey: "1",
+	}
+	if pending {
+		data[pendingKey] = "true"
+	}
+	return variants(map[string]any{"data": data})
 }
 
 func variants(values map[string]any) map[string]dbus.Variant {

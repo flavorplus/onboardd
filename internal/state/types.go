@@ -52,7 +52,6 @@ const (
 	ReasonInspectingNetwork      Reason = "inspecting-network"
 	ReasonInfrastructureReady    Reason = "infrastructure-ready"
 	ReasonStandaloneActive       Reason = "standalone-active"
-	ReasonStandaloneSelected     Reason = "standalone-selected"
 	ReasonProvisioningActive     Reason = "provisioning-active"
 	ReasonNoCandidate            Reason = "no-infrastructure-candidate"
 	ReasonWaitingForActivation   Reason = "waiting-for-activation"

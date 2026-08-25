@@ -65,6 +65,185 @@ func TestNetworkBackendFiltersAndTranslatesScans(t *testing.T) {
 	}
 }
 
+func TestNetworkBackendKnownNetworksAreScopedAndOwnedOnlyDeletion(t *testing.T) {
+	network := &fakeSetupNetwork{
+		activeUUID: "active",
+		profiles: []networkmanager.Profile{
+			{
+				UUID: "active", SSID: "Office", Type: "802-11-wireless", Mode: "infrastructure",
+				Interface: "wlan0", Owned: true, Role: networkmanager.RoleInfrastructure,
+				Autoconnect: true,
+			},
+			{
+				UUID: "old", SSID: "Workshop", Type: "802-11-wireless", Mode: "infrastructure",
+				Interface: "wlan0", Owned: true, Role: networkmanager.RoleInfrastructure,
+			},
+			{
+				UUID: "system", SSID: "System Wi-Fi", Type: "802-11-wireless", Mode: "infrastructure",
+				Autoconnect: true,
+			},
+			{
+				UUID: "standalone", SSID: "Device", Type: "802-11-wireless", Mode: "ap",
+				Interface: "wlan0", Owned: true, Role: networkmanager.RoleStandalone,
+			},
+			{
+				UUID: "other", SSID: "Other radio", Type: "802-11-wireless", Mode: "infrastructure",
+				Interface: "wlan1", Owned: true, Role: networkmanager.RoleInfrastructure,
+			},
+		},
+	}
+	backend := newTestNetworkBackend(t, network)
+
+	known, err := backend.KnownNetworks(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(known) != 3 {
+		t.Fatalf("KnownNetworks() = %#v, want three applicable client profiles", known)
+	}
+	if !known[0].Managed || !known[0].Active || known[0].CanConnect || known[0].CanForget {
+		t.Fatalf("active known network = %#v", known[0])
+	}
+	if !known[1].Managed || known[1].Active || !known[1].CanConnect || !known[1].CanForget {
+		t.Fatalf("inactive managed network = %#v", known[1])
+	}
+	if known[2].Managed || known[2].CanConnect || known[2].CanForget {
+		t.Fatalf("system network = %#v", known[2])
+	}
+
+	if err := backend.ForgetKnownNetwork(context.Background(), "old"); err != nil {
+		t.Fatal(err)
+	}
+	if network.deletedUUID != "old" || network.deletedInterface != "wlan0" {
+		t.Fatalf("deleted profile = %q on %q", network.deletedUUID, network.deletedInterface)
+	}
+}
+
+func TestNetworkBackendConnectsKnownNetworkWithProtectedTransition(t *testing.T) {
+	const uuid = "0a3aeac5-3e46-4f46-b9b0-99b2f83d4cb1"
+	network := &fakeSetupNetwork{
+		activeUUID: "provisioning",
+		address:    "10.42.0.1",
+		profiles: []networkmanager.Profile{{
+			UUID: uuid, SSID: "Workshop", Type: "802-11-wireless", Mode: "infrastructure",
+			Interface: "wlan0", Owned: true, Role: networkmanager.RoleInfrastructure,
+		}},
+	}
+	infrastructure := &fakeInfrastructureTransition{}
+	captive := &fakeCaptiveExiter{}
+	backend := newTestNetworkBackendWithTransitions(
+		t,
+		network,
+		infrastructure,
+		&fakeStandaloneTransition{},
+		captive,
+	)
+
+	if err := backend.ConnectKnownNetwork(context.Background(), uuid); err != nil {
+		t.Fatalf("ConnectKnownNetwork() error = %v", err)
+	}
+	options := infrastructure.savedOptions
+	if options.UUID != uuid || options.SSID != "Workshop" ||
+		options.PreviousUUID != "provisioning" ||
+		options.PreviousIPv4Address != netip.MustParseAddr("10.42.0.1") {
+		t.Fatalf("saved infrastructure options = %#v", options)
+	}
+	if captive.exits != 1 {
+		t.Fatalf("captive exits = %d, want 1", captive.exits)
+	}
+}
+
+func TestNetworkBackendRefusesUnsafeKnownNetworkActivation(t *testing.T) {
+	profiles := []networkmanager.Profile{
+		{
+			UUID: "active", SSID: "Office", Type: "802-11-wireless", Mode: "infrastructure",
+			Interface: "wlan0", Owned: true, Role: networkmanager.RoleInfrastructure,
+		},
+		{
+			UUID: "system", SSID: "System", Type: "802-11-wireless", Mode: "infrastructure",
+			Interface: "wlan0",
+		},
+		{
+			UUID: "standalone", SSID: "Device", Type: "802-11-wireless", Mode: "ap",
+			Interface: "wlan0", Owned: true, Role: networkmanager.RoleStandalone,
+		},
+	}
+	for _, test := range []struct {
+		name string
+		uuid string
+		code string
+	}{
+		{name: "active profile", uuid: "active", code: "active_network"},
+		{name: "system profile", uuid: "system", code: "network_read_only"},
+		{name: "standalone profile", uuid: "standalone", code: "network_read_only"},
+		{name: "missing profile", uuid: "missing", code: "known_network_not_found"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			infrastructure := &fakeInfrastructureTransition{}
+			network := &fakeSetupNetwork{
+				activeUUID: "active",
+				address:    "192.168.1.20",
+				profiles:   profiles,
+			}
+			backend := newTestNetworkBackendWithTransitions(
+				t,
+				network,
+				infrastructure,
+				&fakeStandaloneTransition{},
+				&fakeCaptiveExiter{},
+			)
+			err := backend.ConnectKnownNetwork(context.Background(), test.uuid)
+			var public *PublicError
+			if !errors.As(err, &public) || public.Failure.Code != test.code {
+				t.Fatalf("ConnectKnownNetwork() error = %v, want %s", err, test.code)
+			}
+			if infrastructure.savedOptions.UUID != "" {
+				t.Fatalf("unsafe profile reached transition: %#v", infrastructure.savedOptions)
+			}
+		})
+	}
+}
+
+func TestNetworkBackendRefusesUnsafeKnownNetworkDeletion(t *testing.T) {
+	profiles := []networkmanager.Profile{
+		{
+			UUID: "active", SSID: "Office", Type: "802-11-wireless", Mode: "infrastructure",
+			Interface: "wlan0", Owned: true, Role: networkmanager.RoleInfrastructure,
+		},
+		{
+			UUID: "system", SSID: "System", Type: "802-11-wireless", Mode: "infrastructure",
+			Interface: "wlan0",
+		},
+		{
+			UUID: "standalone", SSID: "Device", Type: "802-11-wireless", Mode: "ap",
+			Interface: "wlan0", Owned: true, Role: networkmanager.RoleStandalone,
+		},
+	}
+	for _, test := range []struct {
+		name string
+		uuid string
+		code string
+	}{
+		{name: "active profile", uuid: "active", code: "active_network"},
+		{name: "system profile", uuid: "system", code: "network_read_only"},
+		{name: "standalone profile", uuid: "standalone", code: "network_read_only"},
+		{name: "missing profile", uuid: "missing", code: "known_network_not_found"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			network := &fakeSetupNetwork{activeUUID: "active", profiles: profiles}
+			backend := newTestNetworkBackend(t, network)
+			err := backend.ForgetKnownNetwork(context.Background(), test.uuid)
+			var public *PublicError
+			if !errors.As(err, &public) || public.Failure.Code != test.code {
+				t.Fatalf("ForgetKnownNetwork() error = %v, want %s", err, test.code)
+			}
+			if network.deletedUUID != "" {
+				t.Fatalf("unsafe profile %q was deleted", network.deletedUUID)
+			}
+		})
+	}
+}
+
 func TestNetworkBackendProtectedTransitionsUseCurrentConnection(t *testing.T) {
 	for _, kind := range []string{"connect", "standalone"} {
 		t.Run(kind, func(t *testing.T) {
@@ -158,10 +337,12 @@ func newTestNetworkBackendWithTransitions(
 }
 
 type fakeSetupNetwork struct {
-	activeUUID   string
-	address      string
-	profiles     []networkmanager.Profile
-	accessPoints []networkmanager.AccessPoint
+	activeUUID       string
+	address          string
+	profiles         []networkmanager.Profile
+	accessPoints     []networkmanager.AccessPoint
+	deletedUUID      string
+	deletedInterface string
 }
 
 func (network *fakeSetupNetwork) Status(context.Context, string) (networkmanager.Status, error) {
@@ -192,9 +373,28 @@ func (network *fakeSetupNetwork) Scan(
 	return network.accessPoints, nil
 }
 
+func (network *fakeSetupNetwork) DeleteOwnedInfrastructureProfile(
+	_ context.Context,
+	interfaceName string,
+	uuid string,
+) error {
+	network.deletedInterface = interfaceName
+	network.deletedUUID = uuid
+	return nil
+}
+
 type fakeInfrastructureTransition struct {
-	options recovery.InfrastructureOptions
-	err     error
+	options      recovery.InfrastructureOptions
+	savedOptions recovery.SavedInfrastructureOptions
+	err          error
+}
+
+func (transition *fakeInfrastructureTransition) AttemptSaved(
+	_ context.Context,
+	options recovery.SavedInfrastructureOptions,
+) (networkmanager.Activation, error) {
+	transition.savedOptions = options
+	return networkmanager.Activation{UUID: options.UUID}, transition.err
 }
 
 func (transition *fakeInfrastructureTransition) Attempt(

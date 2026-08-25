@@ -27,6 +27,18 @@ type Network struct {
 	Strength uint8  `json:"strength"`
 }
 
+// KnownNetwork is a saved Wi-Fi client profile that may apply to this device.
+// UUID is an opaque mutation key; no credentials or backing-file paths are exposed.
+type KnownNetwork struct {
+	UUID       string `json:"uuid"`
+	SSID       string `json:"ssid"`
+	Managed    bool   `json:"managed_by_onboardd"`
+	Active     bool   `json:"active"`
+	Automatic  bool   `json:"automatic"`
+	CanConnect bool   `json:"can_connect"`
+	CanForget  bool   `json:"can_forget"`
+}
+
 // ConnectionRequest contains credentials for one infrastructure attempt. Password is
 // deliberately absent from Operation and every response type.
 type ConnectionRequest struct {

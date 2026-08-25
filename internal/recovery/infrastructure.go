@@ -38,6 +38,32 @@ type InfrastructureOptions struct {
 	PreviousIPv4Address netip.Addr
 }
 
+// SavedInfrastructureOptions describes an existing onboardd-owned infrastructure
+// profile and the active connection that must be restored if validation fails.
+type SavedInfrastructureOptions struct {
+	Interface           string
+	UUID                string
+	SSID                string
+	Requirement         connectivity.Requirement
+	ActivationWait      time.Duration
+	RollbackAfter       time.Duration
+	RestorationWait     time.Duration
+	PreviousUUID        string
+	PreviousIPv4Address netip.Addr
+}
+
+type protectedInfrastructureOptions struct {
+	Interface           string
+	SSID                string
+	Requirement         connectivity.Requirement
+	ActivationWait      time.Duration
+	RollbackAfter       time.Duration
+	RestorationWait     time.Duration
+	PreviousUUID        string
+	PreviousIPv4Address netip.Addr
+	RemoveRejected      bool
+}
+
 // Infrastructure manages checkpoint-backed transitions away from provisioning.
 type Infrastructure struct {
 	network networkManager
@@ -64,22 +90,63 @@ func (transition *Infrastructure) Attempt(
 	candidate := options.Candidate
 	candidate.Interface = options.Interface
 	candidate.Autoconnect = false
+	candidate.Pending = true
 	if _, _, err := networkmanager.BuildInfrastructureSettings(candidate); err != nil {
 		return networkmanager.Activation{}, fmt.Errorf("validate candidate infrastructure profile: %w", err)
 	}
+	return transition.attempt(
+		ctx,
+		protectedOptions(options, candidate.SSID, true),
+		func(ctx context.Context) (networkmanager.Activation, error) {
+			return transition.network.ConnectInfrastructure(ctx, candidate)
+		},
+	)
+}
 
+// AttemptSaved activates and validates an existing profile without changing or
+// deleting it before the protected transition succeeds.
+func (transition *Infrastructure) AttemptSaved(
+	ctx context.Context,
+	options SavedInfrastructureOptions,
+) (networkmanager.Activation, error) {
+	if err := validateSavedInfrastructureOptions(options); err != nil {
+		return networkmanager.Activation{}, err
+	}
+	return transition.attempt(
+		ctx,
+		protectedInfrastructureOptions{
+			Interface:           options.Interface,
+			SSID:                options.SSID,
+			Requirement:         options.Requirement,
+			ActivationWait:      options.ActivationWait,
+			RollbackAfter:       options.RollbackAfter,
+			RestorationWait:     options.RestorationWait,
+			PreviousUUID:        options.PreviousUUID,
+			PreviousIPv4Address: options.PreviousIPv4Address,
+		},
+		func(ctx context.Context) (networkmanager.Activation, error) {
+			return transition.network.ActivateProfile(ctx, options.Interface, options.UUID)
+		},
+	)
+}
+
+func (transition *Infrastructure) attempt(
+	ctx context.Context,
+	options protectedInfrastructureOptions,
+	activate func(context.Context) (networkmanager.Activation, error),
+) (networkmanager.Activation, error) {
 	checkpoint, err := transition.network.CreateCheckpoint(
 		ctx,
 		options.Interface,
 		options.RollbackAfter,
 	)
 	if err != nil {
-		return networkmanager.Activation{}, fmt.Errorf("protect provisioning AP with checkpoint: %w", err)
+		return networkmanager.Activation{}, fmt.Errorf("protect current connection with checkpoint: %w", err)
 	}
 
-	activation, err := transition.network.ConnectInfrastructure(ctx, candidate)
+	activation, err := activate(ctx)
 	if err != nil {
-		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, "", fmt.Errorf("activate candidate infrastructure profile: %w", err))
+		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, fmt.Errorf("activate infrastructure profile: %w", err))
 	}
 	if err := transition.network.WaitForActivation(ctx, activation.ActivePath, options.Interface, options.ActivationWait); err != nil {
 		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, fmt.Errorf("wait for candidate infrastructure profile: %w", err))
@@ -113,7 +180,7 @@ func (transition *Infrastructure) Attempt(
 		ctx,
 		options.Interface,
 		networkmanager.RoleInfrastructure,
-		candidate.SSID,
+		options.SSID,
 		activation.UUID,
 	); err != nil {
 		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, fmt.Errorf("select infrastructure mode: %w", err))
@@ -125,7 +192,7 @@ func (transition *Infrastructure) Attempt(
 }
 
 func (transition *Infrastructure) rollback(
-	options InfrastructureOptions,
+	options protectedInfrastructureOptions,
 	checkpointPath string,
 	candidateUUID string,
 	cause error,
@@ -137,7 +204,7 @@ func (transition *Infrastructure) rollback(
 	}
 
 	var cleanupErrors []error
-	if candidateUUID != "" {
+	if options.RemoveRejected && candidateUUID != "" {
 		if err := transition.network.DeleteOwnedProfile(cleanupContext, candidateUUID); err != nil {
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("remove rejected infrastructure profile: %w", err))
 		}
@@ -150,7 +217,7 @@ func (transition *Infrastructure) rollback(
 
 func (transition *Infrastructure) waitForPreviousConnection(
 	ctx context.Context,
-	options InfrastructureOptions,
+	options protectedInfrastructureOptions,
 ) error {
 	if err := restorePreviousConnection(
 		ctx,
@@ -166,6 +233,29 @@ func (transition *Infrastructure) waitForPreviousConnection(
 }
 
 func validateInfrastructureOptions(options InfrastructureOptions) error {
+	return validateProtectedInfrastructureOptions(protectedOptions(options, options.Candidate.SSID, true))
+}
+
+func validateSavedInfrastructureOptions(options SavedInfrastructureOptions) error {
+	if options.UUID == "" {
+		return errors.New("saved profile uuid is required")
+	}
+	if options.SSID == "" {
+		return errors.New("saved profile ssid is required")
+	}
+	return validateProtectedInfrastructureOptions(protectedInfrastructureOptions{
+		Interface:           options.Interface,
+		SSID:                options.SSID,
+		Requirement:         options.Requirement,
+		ActivationWait:      options.ActivationWait,
+		RollbackAfter:       options.RollbackAfter,
+		RestorationWait:     options.RestorationWait,
+		PreviousUUID:        options.PreviousUUID,
+		PreviousIPv4Address: options.PreviousIPv4Address,
+	})
+}
+
+func validateProtectedInfrastructureOptions(options protectedInfrastructureOptions) error {
 	if options.Interface == "" {
 		return errors.New("interface is required")
 	}
@@ -189,6 +279,24 @@ func validateInfrastructureOptions(options InfrastructureOptions) error {
 		return errors.New("previous IPv4 address must be usable")
 	}
 	return nil
+}
+
+func protectedOptions(
+	options InfrastructureOptions,
+	ssid string,
+	removeRejected bool,
+) protectedInfrastructureOptions {
+	return protectedInfrastructureOptions{
+		Interface:           options.Interface,
+		SSID:                ssid,
+		Requirement:         options.Requirement,
+		ActivationWait:      options.ActivationWait,
+		RollbackAfter:       options.RollbackAfter,
+		RestorationWait:     options.RestorationWait,
+		PreviousUUID:        options.PreviousUUID,
+		PreviousIPv4Address: options.PreviousIPv4Address,
+		RemoveRejected:      removeRejected,
+	}
 }
 
 func normalizeConnectivity(value networkmanager.Connectivity) connectivity.InternetState {

@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Tests and static checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+          package-manager-cache: true
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Test and build frontend
+        run: |
+          npm test --prefix frontend
+          npm run build --prefix frontend
+          git diff --exit-code -- internal/frontend/dist
+
+      - name: Test Go with race detection
+        run: go test -race -shuffle=on ./...
+
+      - name: Vet Go
+        run: go vet ./...
+
+      - name: Check module metadata
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Check shell syntax
+        run: |
+          bash -n \
+            scripts/setup-recorder.sh \
+            scripts/dbus-trace-recorder.sh \
+            scripts/build-release.sh \
+            scripts/build-deb.sh \
+            scripts/check-deb.sh
+          sh -n \
+            packaging/debian/postinst \
+            packaging/debian/prerm \
+            packaging/debian/postrm
+
+      - name: Scan reachable Go vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  package:
+    name: Reproducible Debian packages
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+          package-manager-cache: true
+
+      - name: Build embedded frontend
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+
+      - name: Select package version
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          version="v0.0.0-ci.${RUN_NUMBER}"
+          if [[ "$REF_TYPE" == tag ]]; then
+            version="$REF_NAME"
+          fi
+          printf 'version=%s\n' "$version" >>"$GITHUB_OUTPUT"
+
+      - name: Build and inspect twice
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          scripts/build-deb.sh "$VERSION" "$RUNNER_TEMP/first"
+          scripts/build-deb.sh "$VERSION" "$RUNNER_TEMP/second"
+
+      - name: Verify byte-for-byte reproducibility
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          first="$RUNNER_TEMP/first/$VERSION"
+          second="$RUNNER_TEMP/second/$VERSION"
+          diff -u "$first/SHA256SUMS" "$second/SHA256SUMS"
+          diff -u "$first/DEBSHA256SUMS" "$second/DEBSHA256SUMS"
+          cmp "$first/onboardd-linux-amd64" "$second/onboardd-linux-amd64"
+          cmp "$first/onboardd-linux-arm64" "$second/onboardd-linux-arm64"
+          for package in "$first"/*.deb; do
+            cmp "$package" "$second/${package##*/}"
+          done
+
+      - name: Prepare inspectable release artifact
+        if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tar \
+            --create \
+            --gzip \
+            --file "$RUNNER_TEMP/onboardd-$VERSION.tar.gz" \
+            --directory "$RUNNER_TEMP/first" \
+            "$VERSION"
+
+      - name: Upload inspectable release artifact
+        if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+        uses: actions/upload-artifact@v7
+        with:
+          name: onboardd-${{ steps.version.outputs.version }}
+          path: ${{ runner.temp }}/onboardd-${{ steps.version.outputs.version }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14

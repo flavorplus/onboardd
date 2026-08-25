@@ -25,8 +25,22 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if args[0] == "debug" {
 		return runDebug(ctx, args[1:], stdout, stderr)
 	}
+	if args[0] == "run" {
+		err := runAppliance(ctx, args[1:], stdout, stderr)
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
 	if args[0] == "setup" {
 		err := runSetup(ctx, args[1:], stdout, stderr)
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if args[0] == "recover" {
+		err := runRecover(ctx, args[1:], stdout, stderr)
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
@@ -89,11 +103,15 @@ func printRootHelp(writer io.Writer) {
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Usage:")
 	fmt.Fprintln(writer, "  onboardd --version")
+	fmt.Fprintln(writer, "  onboardd run [--config /etc/onboardd/config.toml] [operational overrides]")
 	fmt.Fprintln(writer, "  onboardd setup [--config /etc/onboardd/config.toml] [operational overrides]")
+	fmt.Fprintln(writer, "  onboardd recover")
 	fmt.Fprintln(writer, "  onboardd debug <command> [options]")
 	fmt.Fprintln(writer)
-	fmt.Fprintln(writer, "The setup command loads TOML, environment variables, and CLI overrides, then starts")
-	fmt.Fprintln(writer, "the embedded setup portal. Run 'onboardd setup -h' for its options.")
+	fmt.Fprintln(writer, "The run command reconciles network state and opens recovery setup when needed.")
+	fmt.Fprintln(writer, "The recover command asks a running appliance to enter manual recovery.")
+	fmt.Fprintln(writer, "The setup command runs the portal directly when the appliance is stopped.")
+	fmt.Fprintln(writer, "Both load TOML, environment variables, and operational CLI overrides.")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Run 'onboardd debug help' for NetworkManager and reconciliation diagnostics.")
 }

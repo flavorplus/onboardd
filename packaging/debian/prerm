@@ -1,0 +1,27 @@
+#!/bin/sh
+
+set -e
+
+unit=onboardd.service
+root=${DPKG_ROOT:-}
+
+case "$1" in
+  remove)
+    if [ -z "$root" ] && [ -d /run/systemd/system ] && \
+       command -v systemctl >/dev/null 2>&1 && \
+       command -v deb-systemd-invoke >/dev/null 2>&1 && \
+       systemctl --quiet is-active "$unit"; then
+      # A normal stop gives onboardd time to remove only its temporary captive
+      # resources. Durable NetworkManager profiles are intentionally untouched.
+      deb-systemd-invoke stop "$unit" >/dev/null
+    fi
+    ;;
+  upgrade|deconfigure|failed-upgrade)
+    # Keep an active daemon alive while dpkg replaces the binary. postinst reloads
+    # the unit and restarts it only if it is still active.
+    ;;
+  *)
+    printf 'prerm called with unsupported action: %s\n' "$1" >&2
+    exit 1
+    ;;
+esac

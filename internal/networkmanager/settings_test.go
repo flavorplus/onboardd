@@ -43,6 +43,36 @@ func TestBuildInfrastructureSettingsSecured(t *testing.T) {
 	}
 }
 
+func TestBuildInfrastructureSettingsMarksUncommittedCandidate(t *testing.T) {
+	settings, _, err := BuildInfrastructureSettings(InfrastructureOptions{
+		UUID:      testUUID,
+		Interface: "wlan0",
+		SSID:      "Office",
+		Password:  "correct-horse",
+		Pending:   true,
+	})
+	if err != nil {
+		t.Fatalf("BuildInfrastructureSettings() error = %v", err)
+	}
+	metadata := variantMapStringString(settings["user"]["data"])
+	if metadata[pendingKey] != "true" {
+		t.Fatalf("pending metadata = %q, want true", metadata[pendingKey])
+	}
+
+	profile := Profile{
+		ID: "Office profile", UUID: testUUID, Interface: "wlan0", SSID: "Office",
+		Priority: 20, Owned: true, Role: RoleInfrastructure, Pending: true,
+	}
+	rebuilt, err := rebuildOwnedSettings(profile, settings, settings, true)
+	if err != nil {
+		t.Fatalf("rebuildOwnedSettings() error = %v", err)
+	}
+	committed := variantMapStringString(rebuilt["user"]["data"])
+	if _, exists := committed[pendingKey]; exists {
+		t.Fatalf("committed metadata retained pending marker: %#v", committed)
+	}
+}
+
 func TestBuildInfrastructureSettingsOpen(t *testing.T) {
 	settings, _, err := BuildInfrastructureSettings(InfrastructureOptions{
 		UUID:      testUUID,

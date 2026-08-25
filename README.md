@@ -10,8 +10,8 @@ of the core daemon.
 
 ## Project status
 
-The project is being developed one phase at a time. **Phases 0 through 5 are complete.**
-Phase 6 is in progress.
+The project is being developed one phase at a time. **Phases 0 through 7 are complete.**
+Phase 8 is in progress.
 
 | Phase | Deliverable | Status |
 |---|---|---|
@@ -21,9 +21,9 @@ Phase 6 is in progress.
 | 3 | Temporary AP and captive portal plumbing | Complete |
 | 4 | Setup API and web interface | Complete |
 | 5 | Branding and configuration | Complete |
-| 6 | Application handoff | In progress |
-| 7 | Recovery and appliance reliability | Not started |
-| 8 | Packaging and installation | Not started |
+| 6 | Application handoff | Complete |
+| 7 | Recovery and appliance reliability | Complete |
+| 8 | Packaging and installation | In progress |
 | 9 | Hardware validation and v1.0 integrations | Not started |
 
 See the [roadmap](docs/roadmap.md) for the scope and exit criteria of every phase.
@@ -36,6 +36,8 @@ See the [roadmap](docs/roadmap.md) for the scope and exit criteria of every phas
 - No separate `state.json` for networking mode.
 - Infrastructure and standalone are persistent operating modes.
 - Provisioning is a temporary, in-memory NetworkManager profile.
+- Known Wi-Fi profiles are visible in the setup UI; inactive onboardd-owned
+  infrastructure profiles can be activated or forgotten there.
 - Configuration is loaded from defaults, TOML, environment variables, and CLI options.
 - Product names, colors, logos, copy, and application handoff are configuration—not forks.
 
@@ -62,17 +64,39 @@ go build ./cmd/onboardd
 go test ./...
 go vet ./...
 go run ./cmd/onboardd --version
+scripts/build-release.sh v0.1.0
+scripts/build-deb.sh v0.1.0 # Debian, Ubuntu, or Raspberry Pi OS
 ```
 
 See [Development](docs/development.md) for the editor workflow and repository layout.
 The development workflow also includes a Mac-safe simulated device for iterating on the
 complete portal without transferring a build or changing the Mac's network.
 
+## Debian installation
+
+Versioned ARM64 and AMD64 Debian packages install onboardd as a hardened systemd
+service. A fresh install stays disabled until its conffile and root-only Wi-Fi password
+files have been prepared. See [Install and operate onboardd](docs/installation.md) for
+package verification, first configuration, service operation, upgrades, rollback,
+removal, and purge behavior.
+
 ## Configuration
 
 The implemented contract is demonstrated in [config/example.toml](config/example.toml)
-and described by [config/schema.json](config/schema.json). The configuration-driven
-setup experience is started with:
+and described by [config/schema.json](config/schema.json). The long-running appliance
+controller is started with:
+
+```text
+sudo onboardd run --config /etc/onboardd/config.toml
+```
+
+Ask that running controller to enter temporary recovery setup with:
+
+```text
+sudo onboardd recover
+```
+
+If the controller is stopped, the standalone recovery process remains available with:
 
 ```text
 sudo onboardd setup --config /etc/onboardd/config.toml
@@ -102,10 +126,13 @@ onboardd debug reconcile
 ```
 
 Run `onboardd debug help` for complete command forms. Network changes use only the
-configured `onboardd setup` workflow; retired phase-proof mutation commands are not a
-second public control surface. `profile-delete` is restricted to onboardd-owned profiles
-and requires explicit confirmation.
+configured `onboardd run` or explicit `onboardd setup` workflow; retired phase-proof
+mutation commands are not a second public control surface. `profile-delete` is
+restricted to onboardd-owned profiles and requires explicit confirmation.
 
-When an SSH connection uses the Wi-Fi interface being configured, run setup through
-`scripts/setup-recorder.sh`. It retains the log and PID across the radio transition and
-sends a graceful termination signal during cleanup.
+When an SSH connection uses the Wi-Fi interface being configured, use
+`scripts/setup-recorder.sh`. Its `run` command starts the appliance controller, `recover`
+requests manual recovery through that running process, and `start` remains available for
+the direct setup workflow. `snapshot` appends labeled health, profile, owned-resource,
+and boot evidence without reading connection secrets. It retains the log and PID across
+radio transitions and sends a graceful termination signal during cleanup.

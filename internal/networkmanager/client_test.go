@@ -68,6 +68,28 @@ func TestSupersededProfilesMatchInfrastructureSSID(t *testing.T) {
 	}
 }
 
+func TestPendingProfilesOnlyReturnsOwnedCandidatesForInterface(t *testing.T) {
+	profiles := []Profile{
+		{UUID: "pending", Interface: "wlan0", Owned: true, Role: RoleInfrastructure, Pending: true},
+		{UUID: "committed", Interface: "wlan0", Owned: true, Role: RoleInfrastructure},
+		{UUID: "foreign", Interface: "wlan0", Owned: false, Role: RoleInfrastructure, Pending: true},
+		{UUID: "standalone", Interface: "wlan0", Owned: true, Role: RoleStandalone, Pending: true},
+		{UUID: "other-interface", Interface: "wlan1", Owned: true, Role: RoleInfrastructure, Pending: true},
+	}
+
+	got := pendingProfiles(profiles, "wlan0")
+	if len(got) != 1 || got[0].UUID != "pending" {
+		t.Fatalf("pendingProfiles() = %#v, want pending candidate", got)
+	}
+}
+
+func TestDeletePendingInfrastructureProfilesValidatesInterfaceBeforeDBus(t *testing.T) {
+	client := &Client{}
+	if err := client.DeletePendingInfrastructureProfiles(context.Background(), ""); err == nil {
+		t.Fatal("empty interface unexpectedly reached D-Bus cleanup")
+	}
+}
+
 func TestAutoconnectUpdatesSelectOneProductionMode(t *testing.T) {
 	profiles := []Profile{
 		{UUID: "infra-enabled", Interface: "wlan0", Owned: true, Role: RoleInfrastructure, Autoconnect: true},
@@ -101,6 +123,50 @@ func TestActivateProfileRejectsInvalidUUIDBeforeDBus(t *testing.T) {
 	client := &Client{}
 	if _, err := client.ActivateProfile(context.Background(), "wlan0", "not-a-uuid"); err == nil {
 		t.Fatal("invalid UUID unexpectedly reached D-Bus activation")
+	}
+}
+
+func TestDeleteOwnedInfrastructureProfileRejectsInvalidInputBeforeDBus(t *testing.T) {
+	client := &Client{}
+	if err := client.DeleteOwnedInfrastructureProfile(
+		context.Background(),
+		"",
+		"329cdb0f-d696-4f63-a17e-84ac66582f43",
+	); err == nil {
+		t.Fatal("empty interface unexpectedly reached D-Bus deletion")
+	}
+	if err := client.DeleteOwnedInfrastructureProfile(
+		context.Background(),
+		"wlan0",
+		"not-a-uuid",
+	); err == nil {
+		t.Fatal("invalid uuid unexpectedly reached D-Bus deletion")
+	}
+}
+
+func TestProfileInfrastructureAndInterfaceClassification(t *testing.T) {
+	profile := Profile{
+		Type:      "802-11-wireless",
+		Mode:      "infrastructure",
+		Interface: "wlan0",
+	}
+	if !profile.IsInfrastructureWiFi() {
+		t.Fatal("Wi-Fi client profile was not classified as infrastructure")
+	}
+	profile.Mode = ""
+	if !profile.IsInfrastructureWiFi() {
+		t.Fatal("Wi-Fi profile with NetworkManager's default mode was not classified as infrastructure")
+	}
+	if !profile.AppliesTo("wlan0") || profile.AppliesTo("wlan1") {
+		t.Fatal("interface-bound profile applicability is incorrect")
+	}
+	profile.Interface = ""
+	if !profile.AppliesTo("wlan1") {
+		t.Fatal("unbound profile should apply to any interface")
+	}
+	profile.Mode = "ap"
+	if profile.IsInfrastructureWiFi() {
+		t.Fatal("access-point profile was classified as infrastructure")
 	}
 }
 

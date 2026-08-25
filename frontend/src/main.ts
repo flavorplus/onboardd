@@ -10,6 +10,7 @@ import {
   modeLabel,
   strengthLabel,
   type Bootstrap,
+  type KnownNetwork,
   type Network,
   type Operation,
   type StandaloneHandoff,
@@ -107,7 +108,15 @@ function showModeChoice(): void {
   }
   const handoff = normalBrowserHandoff();
   if (handoff) content.append(handoff);
-  content.append(choices, helpText("You can change this choice later."));
+  content.append(choices);
+  if (bootstrap.capabilities.network) {
+    const management = element("div", "management-actions");
+    management.append(
+      button("Manage known networks", "button button-quiet", () => void showKnownNetworks()),
+    );
+    content.append(management);
+  }
+  content.append(helpText("You can change this choice later."));
 }
 
 function applyBranding(): void {
@@ -173,12 +182,160 @@ async function showNetworks(): Promise<void> {
     actions.append(
       button("Scan again", "button button-secondary", () => void showNetworks()),
       button("Enter a hidden network", "button button-quiet", showHiddenNetwork),
+      button("Known networks", "button button-quiet", () => void showKnownNetworks()),
     );
     content.append(list, actions);
   } catch (error) {
     status.remove();
     showInlineError(content, messageFrom(error), () => void showNetworks());
   }
+}
+
+async function showKnownNetworks(successMessage?: string): Promise<void> {
+  const content = frame({
+    eyebrow: "Wi-Fi profiles",
+    title: "Known networks",
+    description: "Review Wi-Fi profiles saved on this device.",
+    back: bootstrap.capabilities.standalone ? showModeChoice : () => void showNetworks(),
+  });
+  if (successMessage) {
+    const success = textElement("p", successMessage, "inline-success");
+    success.setAttribute("role", "status");
+    content.append(success);
+  }
+  const status = textElement("p", "Loading saved networks…", "inline-status");
+  status.setAttribute("role", "status");
+  content.append(status);
+  try {
+    const networks = await api.knownNetworks();
+    status.remove();
+    const list = element("div", "known-network-list");
+    for (const network of networks) {
+      list.append(knownNetworkRow(network));
+    }
+    if (networks.length === 0) {
+      list.append(helpText("No saved Wi-Fi networks apply to this device."));
+    }
+    content.append(
+      list,
+      helpText("System-managed profiles are shown for context and remain read-only."),
+    );
+  } catch (error) {
+    status.remove();
+    showInlineError(content, messageFrom(error), () => void showKnownNetworks());
+  }
+}
+
+function knownNetworkRow(network: KnownNetwork): HTMLElement {
+  const row = element("article", "known-network-row");
+  const identity = element("div", "network-identity");
+  const details = [network.managed_by_onboardd ? "Saved by onboardd" : "System-managed"];
+  if (network.active) details.push("Currently connected");
+  else if (network.automatic) details.push("Connects automatically");
+  identity.append(
+    textElement("strong", network.ssid),
+    textElement("span", details.join(" · "), "network-meta"),
+  );
+  row.append(identity);
+  const actions = element("div", "known-network-actions");
+  if (network.can_connect) {
+    actions.append(
+      button("Connect", "button button-primary button-compact", () => {
+        showKnownNetworkConfirmation(network);
+      }),
+    );
+  }
+  if (network.can_forget) {
+    actions.append(
+      button("Forget", "button button-danger button-compact", () => {
+        showForgetNetworkConfirmation(network);
+      }),
+    );
+  }
+  if (actions.childElementCount > 0) {
+    row.append(actions);
+  } else {
+    row.append(
+      textElement(
+        "span",
+        network.active ? "In use" : "Read only",
+        "known-network-state",
+      ),
+    );
+  }
+  return row;
+}
+
+function showKnownNetworkConfirmation(network: KnownNetwork): void {
+  const content = frame({
+    eyebrow: "Known networks",
+    title: `Connect to ${network.ssid}?`,
+    description: "The device will use the password already saved with this Wi-Fi profile.",
+    back: () => void showKnownNetworks(),
+  });
+  const note = element("div", "notice");
+  note.append(
+    textElement("strong", "Protected connection change"),
+    textElement(
+      "p",
+      "If this network cannot be reached, the device will restore the current connection automatically.",
+    ),
+  );
+  const errorSlot = element("div", "form-error");
+  errorSlot.setAttribute("role", "alert");
+  const connect = button("Connect", "button button-primary", async () => {
+    connect.disabled = true;
+    errorSlot.replaceChildren();
+    try {
+      await monitorOperation(await api.connectKnownNetwork(network.uuid));
+    } catch (error) {
+      connect.disabled = false;
+      errorSlot.append(textElement("p", messageFrom(error)));
+    }
+  });
+  const handoff = normalBrowserHandoff();
+  if (handoff) content.append(handoff);
+  const actions = element("div", "row-actions");
+  actions.append(
+    connect,
+    button("Cancel", "button button-secondary", () => void showKnownNetworks()),
+  );
+  content.append(note, errorSlot, actions);
+  connect.focus();
+}
+
+function showForgetNetworkConfirmation(network: KnownNetwork): void {
+  const content = frame({
+    eyebrow: "Known networks",
+    title: `Forget ${network.ssid}?`,
+    description: "The saved Wi-Fi profile and its password will be removed from this device.",
+    back: () => void showKnownNetworks(),
+  });
+  const note = element("div", "notice notice-warning");
+  note.append(
+    textElement("strong", "This cannot be undone"),
+    textElement("p", "You will need to enter the Wi-Fi password again to reconnect later."),
+  );
+  const errorSlot = element("div", "form-error");
+  errorSlot.setAttribute("role", "alert");
+  const actions = element("div", "row-actions");
+  const forget = button("Forget network", "button button-danger", async () => {
+    forget.disabled = true;
+    errorSlot.replaceChildren();
+    try {
+      await api.forgetKnownNetwork(network.uuid);
+      await showKnownNetworks(`${network.ssid} was forgotten.`);
+    } catch (error) {
+      forget.disabled = false;
+      errorSlot.append(textElement("p", messageFrom(error)));
+    }
+  });
+  actions.append(
+    forget,
+    button("Keep network", "button button-secondary", () => void showKnownNetworks()),
+  );
+  content.append(note, errorSlot, actions);
+  forget.focus();
 }
 
 function networkButton(network: Network): HTMLButtonElement {
@@ -421,6 +578,11 @@ function showComplete(operation: Operation): void {
     );
   }
   actions.append(button("Change connection", "button button-secondary", showModeChoice));
+  if (bootstrap.capabilities.network) {
+    actions.append(
+      button("Known networks", "button button-quiet", () => void showKnownNetworks()),
+    );
+  }
   content.prepend(success);
   if (applicationStatus) content.append(applicationStatus);
   if (standaloneDetails) {

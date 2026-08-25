@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// ListenFunc binds an HTTP socket selected by the application entry point.
+type ListenFunc func(context.Context, string, string) (net.Listener, error)
+
 // HTTPServer owns one already-bound captive HTTP listener. Accepting a listener keeps
 // privileged binding and interface selection outside this package and makes lifecycle
 // behavior deterministic in tests.
@@ -48,6 +51,30 @@ func StartHTTPServer(listener net.Listener, handler http.Handler) (*HTTPServer, 
 		close(lifecycle.done)
 	}()
 	return lifecycle, nil
+}
+
+// ListenHTTPServer binds a socket and begins serving immediately. It closes the
+// socket if server construction fails so callers never inherit a partial listener.
+func ListenHTTPServer(
+	ctx context.Context,
+	listen ListenFunc,
+	network string,
+	address string,
+	handler http.Handler,
+) (*HTTPServer, error) {
+	if listen == nil {
+		return nil, errors.New("HTTP listen function is required")
+	}
+	listener, err := listen(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	server, err := StartHTTPServer(listener, handler)
+	if err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
+	return server, nil
 }
 
 // Done closes after the listener stops accepting requests.

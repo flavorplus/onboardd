@@ -1,0 +1,49 @@
+# onboardd package configuration. Edit the product text and network choices before
+# enabling the service. Passwords belong in the referenced root-only files, never here.
+schema_version = 1
+
+[product]
+name = "Device"
+device_name = "Device"
+
+[branding]
+primary_color = "#cd2455"
+background_color = "#f8eff3"
+
+[branding.text]
+title = "Set up your device"
+subtitle = "Choose how this device should connect."
+
+[network]
+# NetworkManager Wi-Fi interface controlled by onboardd.
+interface = "wlan0"
+# "local" accepts a usable LAN; "internet" requires confirmed Internet access.
+requirement = "local"
+infrastructure_enabled = true
+standalone_enabled = true
+
+[network.provisioning]
+ssid = "{{ .ProductName }}-Setup-{{ .DeviceID }}"
+password_file = "/etc/onboardd/provisioning-password"
+
+[network.standalone]
+ssid = "{{ .ProductName }}-{{ .DeviceID }}"
+password_file = "/etc/onboardd/standalone-password"
+address = "10.42.0.1/24"
+
+[portal]
+# Port 80 remains the fixed captive-portal endpoint; this is the private UI listener.
+listener_port = 18080
+
+[handoff]
+# Configure application_label and application_url together to link to the product app.
+# application_label = "Open device application"
+# application_url = "http://{{ .Hostname }}.local/"
+# health_check_url = "http://127.0.0.1/health"
+show_standalone_credentials = false
+
+[recovery.gpio]
+# Optional normally-open recovery button, held for three seconds to enter setup.
+enabled = false
+chip = "/dev/gpiochip0"
+line = 17

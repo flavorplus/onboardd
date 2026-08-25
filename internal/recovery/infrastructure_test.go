@@ -34,6 +34,9 @@ func TestInfrastructureAttemptCommitsAcceptedCandidate(t *testing.T) {
 	if network.candidate.Autoconnect {
 		t.Fatal("candidate was eligible for autoconnect before validation")
 	}
+	if !network.candidate.Pending {
+		t.Fatal("candidate was not marked pending before activation")
+	}
 	if network.candidate.Interface != "wlan0" {
 		t.Fatalf("candidate interface = %q", network.candidate.Interface)
 	}
@@ -65,6 +68,69 @@ func TestInfrastructureAttemptRunsFreshInternetCheck(t *testing.T) {
 	}
 }
 
+func TestInfrastructureAttemptSavedCommitsAcceptedProfile(t *testing.T) {
+	network := newFakeNetwork()
+	transition, err := NewInfrastructure(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	activation, err := transition.AttemptSaved(context.Background(), validSavedOptions())
+	if err != nil {
+		t.Fatalf("AttemptSaved() error = %v", err)
+	}
+	if activation.UUID != "saved-uuid" {
+		t.Fatalf("activation UUID = %q", activation.UUID)
+	}
+	want := []string{
+		"checkpoint-create",
+		"activate:saved-uuid",
+		"wait",
+		"status",
+		"finalize",
+		"checkpoint-commit",
+	}
+	if !reflect.DeepEqual(network.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", network.calls, want)
+	}
+}
+
+func TestInfrastructureAttemptSavedRollsBackWithoutDeletingProfile(t *testing.T) {
+	network := newFakeNetwork()
+	network.fail = "wait"
+	transition, err := NewInfrastructure(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := transition.AttemptSaved(context.Background(), validSavedOptions()); err == nil {
+		t.Fatal("AttemptSaved() error = nil")
+	}
+	if !contains(network.calls, "checkpoint-rollback") {
+		t.Fatalf("rollback missing from calls: %#v", network.calls)
+	}
+	if contains(network.calls, "delete:saved-uuid") {
+		t.Fatalf("existing profile was deleted during rollback: %#v", network.calls)
+	}
+}
+
+func TestInfrastructureAttemptSavedValidatesBeforeCheckpoint(t *testing.T) {
+	network := newFakeNetwork()
+	transition, err := NewInfrastructure(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := validSavedOptions()
+	options.UUID = ""
+
+	if _, err := transition.AttemptSaved(context.Background(), options); err == nil {
+		t.Fatal("AttemptSaved() error = nil")
+	}
+	if len(network.calls) != 0 {
+		t.Fatalf("invalid saved profile caused side effects: %#v", network.calls)
+	}
+}
+
 func TestInfrastructureAttemptRollsBackAndConfirmsProvisioning(t *testing.T) {
 	for _, stage := range []string{"connect", "wait", "candidate-status", "finalize", "checkpoint-commit"} {
 		t.Run(stage, func(t *testing.T) {
@@ -89,6 +155,21 @@ func TestInfrastructureAttemptRollsBackAndConfirmsProvisioning(t *testing.T) {
 				t.Fatal("restored provisioning state was not inspected")
 			}
 		})
+	}
+}
+
+func TestInfrastructureAttemptRemovesPartiallyCreatedCandidate(t *testing.T) {
+	network := newFakeNetwork()
+	network.fail = "partial-connect"
+	transition, err := NewInfrastructure(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transition.Attempt(context.Background(), validOptions()); err == nil {
+		t.Fatal("Attempt() error = nil")
+	}
+	if !contains(network.calls, "delete:candidate-uuid") {
+		t.Fatalf("partial candidate was not removed: %#v", network.calls)
 	}
 }
 
@@ -190,6 +271,20 @@ func validOptions() InfrastructureOptions {
 	}
 }
 
+func validSavedOptions() SavedInfrastructureOptions {
+	return SavedInfrastructureOptions{
+		Interface:           "wlan0",
+		UUID:                "saved-uuid",
+		SSID:                "Office",
+		Requirement:         connectivity.RequirementLocal,
+		ActivationWait:      30 * time.Second,
+		RollbackAfter:       90 * time.Second,
+		RestorationWait:     time.Second,
+		PreviousUUID:        "provisioning-uuid",
+		PreviousIPv4Address: netip.MustParseAddr("10.42.0.1"),
+	}
+}
+
 func contains(calls []string, want string) bool {
 	for _, call := range calls {
 		if call == want {
@@ -217,6 +312,7 @@ type fakeNetwork struct {
 	connectivity     networkmanager.Connectivity
 	competingProfile bool
 	restoredUUID     string
+	activatedUUID    string
 }
 
 func newFakeNetwork() *fakeNetwork {
@@ -241,6 +337,9 @@ func (network *fakeNetwork) ConnectInfrastructure(
 	if network.fail == "connect" {
 		return networkmanager.Activation{}, errors.New("test failure")
 	}
+	if network.fail == "partial-connect" {
+		return networkmanager.Activation{UUID: "candidate-uuid"}, errors.New("cleanup failed")
+	}
 	return networkmanager.Activation{
 		UUID:       "candidate-uuid",
 		ActivePath: "/org/freedesktop/NetworkManager/ActiveConnection/2",
@@ -248,7 +347,7 @@ func (network *fakeNetwork) ConnectInfrastructure(
 }
 
 func (network *fakeNetwork) WaitForActivation(context.Context, string, string, time.Duration) error {
-	if network.restoredUUID != "" {
+	if contains(network.calls, "checkpoint-rollback") && network.restoredUUID != "" {
 		network.calls = append(network.calls, "restore-wait")
 		return nil
 	}
@@ -288,7 +387,7 @@ func (network *fakeNetwork) Status(context.Context, string) (networkmanager.Stat
 		Device: networkmanager.Device{
 			State:         networkmanager.DeviceStateActivated,
 			StateName:     "activated",
-			ActiveUUID:    "candidate-uuid",
+			ActiveUUID:    network.activeCandidateUUID(),
 			IPv4Addresses: []string{"192.168.1.20"},
 		},
 	}, nil
@@ -300,11 +399,22 @@ func (network *fakeNetwork) ActivateProfile(
 	uuid string,
 ) (networkmanager.Activation, error) {
 	network.calls = append(network.calls, "activate:"+uuid)
-	network.restoredUUID = uuid
+	if contains(network.calls, "checkpoint-rollback") {
+		network.restoredUUID = uuid
+	} else {
+		network.activatedUUID = uuid
+	}
 	return networkmanager.Activation{
 		UUID:       uuid,
 		ActivePath: "/org/freedesktop/NetworkManager/ActiveConnection/restored",
 	}, nil
+}
+
+func (network *fakeNetwork) activeCandidateUUID() string {
+	if network.activatedUUID != "" {
+		return network.activatedUUID
+	}
+	return "candidate-uuid"
 }
 
 func (network *fakeNetwork) CheckConnectivity(context.Context) (networkmanager.Connectivity, error) {

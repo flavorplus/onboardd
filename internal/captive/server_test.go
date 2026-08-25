@@ -133,6 +133,72 @@ func TestStartHTTPServerValidatesDependencies(t *testing.T) {
 	}
 }
 
+func TestListenHTTPServerBindsAndStartsServer(t *testing.T) {
+	listener := newMemoryListener()
+	var gotNetwork string
+	var gotAddress string
+	server, err := ListenHTTPServer(
+		context.Background(),
+		func(_ context.Context, network, address string) (net.Listener, error) {
+			gotNetwork = network
+			gotAddress = address
+			return listener, nil
+		},
+		"tcp4",
+		"0.0.0.0:18080",
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotNetwork != "tcp4" {
+		t.Fatalf("listen network = %q, want %q", gotNetwork, "tcp4")
+	}
+	if gotAddress != "0.0.0.0:18080" {
+		t.Fatalf("listen address = %q, want %q", gotAddress, "0.0.0.0:18080")
+	}
+
+	shutdownContext, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownContext); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+}
+
+func TestListenHTTPServerClosesListenerWhenServerStartFails(t *testing.T) {
+	listener := newMemoryListener()
+	_, err := ListenHTTPServer(
+		context.Background(),
+		func(context.Context, string, string) (net.Listener, error) {
+			return listener, nil
+		},
+		"tcp4",
+		"0.0.0.0:18080",
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "handler") {
+		t.Fatalf("ListenHTTPServer() error = %v", err)
+	}
+	select {
+	case <-listener.closed:
+	default:
+		t.Fatal("listener remains open after server start failure")
+	}
+}
+
+func TestListenHTTPServerValidatesListenFunction(t *testing.T) {
+	_, err := ListenHTTPServer(
+		context.Background(),
+		nil,
+		"tcp4",
+		"0.0.0.0:18080",
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+	)
+	if err == nil || !strings.Contains(err.Error(), "listen function") {
+		t.Fatalf("nil listen function error = %v", err)
+	}
+}
+
 func TestHTTPServerReportsUnexpectedListenerFailure(t *testing.T) {
 	wantErr := errors.New("accept failed")
 	listener := &failingListener{err: wantErr}

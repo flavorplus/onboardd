@@ -128,6 +128,36 @@ listener_port = 80
 	}
 }
 
+func TestDecodeLoadsGPIORecovery(t *testing.T) {
+	loaded, err := Decode(strings.NewReader(`
+schema_version = 1
+
+[recovery.gpio]
+enabled = true
+chip = "/dev/gpiochip2"
+line = 23
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.Recovery.GPIO.Enabled || loaded.Recovery.GPIO.Chip != "/dev/gpiochip2" ||
+		loaded.Recovery.GPIO.Line != 23 {
+		t.Fatalf("Recovery.GPIO = %+v", loaded.Recovery.GPIO)
+	}
+}
+
+func TestDecodeRejectsRelativeGPIOChipPath(t *testing.T) {
+	_, err := Decode(strings.NewReader(`
+schema_version = 1
+
+[recovery.gpio]
+chip = "gpiochip0"
+`))
+	if err == nil || !strings.Contains(err.Error(), "absolute device path") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestDecodeRejectsIncompleteApplicationHandoff(t *testing.T) {
 	_, err := Decode(strings.NewReader(`
 schema_version = 1

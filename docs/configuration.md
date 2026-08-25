@@ -61,6 +61,30 @@ The public contract is intentionally small. Network timing, captive DNS paths, r
 band, and the provisioning subnet are implementation defaults rather than product
 settings. Phase 4's debug commands retain temporary overrides for troubleshooting.
 
+## Recovery input
+
+Manual recovery is always available to a local administrator while `onboardd run` is
+active:
+
+```bash
+sudo onboardd recover
+```
+
+The command contacts the private `/run/onboardd/control.sock`; it does not start another
+daemon or HTTP listener. Optional physical recovery uses a normally-open button from a
+GPIO line to ground:
+
+```toml
+[recovery.gpio]
+enabled = true
+chip = "/dev/gpiochip0"
+line = 17
+```
+
+`line` is the character-device line offset, which is the BCM GPIO number for the Pi Zero
+2 W's main controller. The button must be held for three seconds. Pull-up and 50 ms
+debounce are applied by onboardd through the Linux GPIO v2 API.
+
 ## Application handoff
 
 The handoff section optionally defines the product application shown when setup
@@ -182,8 +206,8 @@ onboardd debug config --config config/example.toml \
 
 Every public TOML value has an environment mapping. The CLI override layer deliberately
 covers only the operational interface, requirement, mode switches, and listener port;
-product text and branding do not need command-line flags. Both `debug config` and the
-production `setup` command expose these flags. The
+product text and branding do not need command-line flags. `debug config`, `setup`, and
+the production `run` command expose these flags. The
 resolver applies all layers before cross-field validation, so an intentional environment
 or CLI override can repair a file-level combination such as a temporarily disabled mode.
 
@@ -218,11 +242,26 @@ ONBOARDD_HANDOFF_APPLICATION_LABEL
 ONBOARDD_HANDOFF_APPLICATION_URL
 ONBOARDD_HANDOFF_HEALTH_CHECK_URL
 ONBOARDD_HANDOFF_SHOW_STANDALONE_CREDENTIALS
+ONBOARDD_RECOVERY_GPIO_ENABLED
+ONBOARDD_RECOVERY_GPIO_CHIP
+ONBOARDD_RECOVERY_GPIO_LINE
 ```
 
-## Production setup command
+## Production commands
 
-The normal configuration-driven entry point is:
+For packaged installation, first configuration, systemd operation, upgrades, and
+removal, see [Install and operate onboardd](installation.md).
+
+The normal long-running appliance entry point is:
+
+```bash
+sudo onboardd run --config /etc/onboardd/config.toml
+```
+
+While it is active, request manual recovery with `sudo onboardd recover`. If the
+long-running process is stopped, start the direct recovery workflow with `setup`.
+
+The direct setup entry point is:
 
 ```bash
 sudo onboardd setup
@@ -250,9 +289,10 @@ Password files must be regular files with no group or other permissions. Prepare
 as root with mode `0600`; the password itself is never accepted on the command line or
 printed. Each WPA password must be 8–63 bytes, or exactly 64 hexadecimal characters.
 
-This Phase 5 command intentionally enters provisioning when started. Automatic boot
-reconciliation, manual recovery activation, and systemd packaging are Phase 7 and
-Phase 8 work; the command is not installed as an always-on service yet.
+`setup` intentionally enters provisioning when started. `run` performs automatic boot
+reconciliation and creates the local manual-recovery control socket. When installed as
+the Phase 8 systemd service, `run` also publishes readiness and watchdog notifications;
+manual foreground execution remains supported.
 
 ## Compatibility
 

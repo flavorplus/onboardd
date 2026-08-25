@@ -69,6 +69,13 @@
         "health_check_url": { "type": "string" },
         "show_standalone_credentials": { "type": "boolean" }
       }
+    },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gpio": { "$ref": "#/$defs/recovery_gpio" }
+      }
     }
   },
   "$defs": {
@@ -87,6 +94,15 @@
         "ssid": { "type": "string", "minLength": 1 },
         "password_file": { "type": "string", "minLength": 1 },
         "address": { "type": "string", "minLength": 1 }
+      }
+    },
+    "recovery_gpio": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "chip": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
       }
     },
     "color": {

@@ -34,6 +34,16 @@ export interface Network {
   strength: number;
 }
 
+export interface KnownNetwork {
+  uuid: string;
+  ssid: string;
+  managed_by_onboardd: boolean;
+  active: boolean;
+  automatic: boolean;
+  can_connect: boolean;
+  can_forget: boolean;
+}
+
 export interface Failure {
   code: string;
   message: string;

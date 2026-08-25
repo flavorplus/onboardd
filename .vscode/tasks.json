@@ -45,6 +45,45 @@
       "problemMatcher": "$go"
     },
     {
+      "label": "Go: build Linux AMD64",
+      "type": "process",
+      "command": "go",
+      "args": [
+        "build",
+        "-trimpath",
+        "-buildvcs=false",
+        "-ldflags=-buildid=",
+        "-o",
+        "${workspaceFolder}/bin/onboardd-linux-amd64",
+        "./cmd/onboardd"
+      ],
+      "options": {
+        "env": {
+          "GOOS": "linux",
+          "GOARCH": "amd64",
+          "CGO_ENABLED": "0"
+        }
+      },
+      "dependsOn": ["Frontend: build"],
+      "problemMatcher": "$go"
+    },
+    {
+      "label": "Release: build Linux binaries",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/build-release.sh",
+      "args": ["${input:releaseVersion}"],
+      "dependsOn": ["Frontend: build"],
+      "problemMatcher": "$go"
+    },
+    {
+      "label": "Release: build Debian packages",
+      "type": "process",
+      "command": "${workspaceFolder}/scripts/build-deb.sh",
+      "args": ["${input:releaseVersion}"],
+      "dependsOn": ["Frontend: build"],
+      "problemMatcher": "$go"
+    },
+    {
       "label": "Go: vet all",
       "type": "process",
       "command": "go",
@@ -156,7 +195,17 @@
       "label": "Scripts: check",
       "type": "process",
       "command": "bash",
-      "args": ["-n", "scripts/setup-recorder.sh", "scripts/dbus-trace-recorder.sh"],
+      "args": [
+        "-n",
+        "scripts/setup-recorder.sh",
+        "scripts/dbus-trace-recorder.sh",
+        "scripts/build-release.sh",
+        "scripts/build-deb.sh",
+        "scripts/check-deb.sh",
+        "packaging/debian/postinst",
+        "packaging/debian/prerm",
+        "packaging/debian/postrm"
+      ],
       "problemMatcher": []
     },
     {
@@ -170,9 +219,18 @@
         "Frontend: test",
         "Frontend: build",
         "Go: build onboardd",
-        "Go: build Pi Zero 2 W"
+        "Go: build Pi Zero 2 W",
+        "Go: build Linux AMD64"
       ],
       "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "releaseVersion",
+      "type": "promptString",
+      "description": "v-prefixed release version",
+      "default": "v0.1.0"
     }
   ]
 }

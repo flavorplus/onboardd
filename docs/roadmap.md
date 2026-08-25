@@ -212,22 +212,67 @@ operation progress.
 
 ## Phase 7 — Recovery and appliance reliability
 
-Status: next implementation boundary.
+Status: complete. Accepted on 2026-08-25 on Raspberry Pi Zero 2 W with Raspberry Pi OS
+Trixie.
 
 Add transactional transitions/checkpoints, retry policies, optional GPIO recovery,
 manual setup activation, boot reconciliation hardening, watchdog behavior, log
 redaction, and power-loss testing. Add a product-facing **Known networks** view that can
-forget onboardd-owned infrastructure profiles. Unmanaged/system profiles remain
-read-only by default; deleting or adopting them requires an explicit future policy and
-must never happen as an automatic recovery side effect.
+activate or forget onboardd-owned infrastructure profiles. Unmanaged/system profiles
+remain read-only by default; deleting or adopting them requires an explicit future
+policy and must never happen as an automatic recovery side effect.
+
+Implementation checklist:
+
+- [x] Add the production appliance lifecycle and `onboardd run` command.
+- [x] Keep HTTP/mDNS available while captive resources enter and exit dynamically.
+- [x] Add bounded activation/connectivity grace and controller/listener recovery.
+- [x] Add explicit manual and optional GPIO recovery activation.
+- [x] Add the Known networks view with protected owned-profile activation and deletion.
+- [x] Harden transition shutdown, HTTP acceptance, and retryable captive cleanup.
+- [x] Add redacted lifecycle logging and a watchdog-ready health signal.
+- [x] Complete the Phase 7 Raspberry Pi reliability checklist.
+
+The detailed boundary and implementation order are in [Phase 7](phase-7.md). The
+accepted target procedure and evidence are in the
+[Phase 7 hardware checklist](phase-7-hardware-checklist.md).
+
+Acceptance evidence:
+
+- Production startup preserved the selected infrastructure mode without creating
+  captive resources, and reboot restored the same durable profile intent.
+- Manual recovery entered one temporary provisioning profile and returned cleanly to
+  production without replacing the running controller.
+- Known-network activation reused the selected saved profile, retained exact-profile
+  rollback protection, and did not create duplicate profiles or pending candidates.
+- Health and redacted lifecycle output remained usable across production, provisioning,
+  network transitions, restart, and graceful shutdown.
+- Graceful and abrupt interruption recovery left no stale owned DNS, nftables,
+  provisioning, control-socket, or pending-profile resources.
 
 Exit criterion: common failures and interrupted transitions cannot leave the appliance
 permanently inaccessible.
 
 ## Phase 8 — Packaging and installation
 
+Status: in progress.
+
 Provide systemd integration, ARM64/AMD64 builds, example configuration, `.deb`
 packaging, installation and upgrade documentation, and secure default permissions.
+
+Implementation checklist:
+
+- [x] Add native systemd readiness, status, and watchdog notifications.
+- [x] Add the initial hardened systemd service unit.
+- [x] Add reproducible versioned ARM64 and AMD64 release builds.
+- [x] Add Debian packaging with safe conffile and secret ownership behavior.
+- [x] Document installation, upgrade, rollback, removal, and purge.
+- [x] Add automated package structure, lifecycle, and reproducibility checks in CI.
+- [ ] Verify package lifecycle and watchdog recovery on Raspberry Pi OS Trixie.
+
+The boundary and implementation order are in [Phase 8](phase-8.md). The clean-system
+acceptance procedure is in the
+[Phase 8 Raspberry Pi checklist](phase-8-hardware-checklist.md).
 
 Exit criterion: a clean supported system can install, enable, configure, upgrade, and
 remove `onboardd` predictably.

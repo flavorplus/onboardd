@@ -131,6 +131,21 @@ var environmentSetters = map[string]environmentSetter{
 		config.Portal.ListenerPort = uint16(port)
 		return nil
 	},
+	"ONBOARDD_RECOVERY_GPIO_ENABLED": booleanEnvironment(func(config *Config, value bool) {
+		config.Recovery.GPIO.Enabled = value
+	}),
+	"ONBOARDD_RECOVERY_GPIO_CHIP": func(config *Config, value string) error {
+		config.Recovery.GPIO.Chip = value
+		return nil
+	},
+	"ONBOARDD_RECOVERY_GPIO_LINE": func(config *Config, value string) error {
+		line, err := strconv.ParseUint(value, 10, 32)
+		if err != nil {
+			return errors.New("must be an integer between 0 and 4294967295")
+		}
+		config.Recovery.GPIO.Line = uint32(line)
+		return nil
+	},
 	"ONBOARDD_HANDOFF_APPLICATION_LABEL": func(config *Config, value string) error {
 		config.Handoff.ApplicationLabel = value
 		return nil

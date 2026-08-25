@@ -1,0 +1,30 @@
+#!/bin/sh
+
+set -e
+
+unit=onboardd.service
+root=${DPKG_ROOT:-}
+
+case "$1" in
+  remove)
+    ;;
+  purge)
+    if command -v deb-systemd-helper >/dev/null 2>&1; then
+      deb-systemd-helper purge "$unit" >/dev/null
+    fi
+    # dpkg removes its config.toml conffile. Password files are administrator-created
+    # secrets rather than package-owned files, so even purge deliberately preserves them.
+    rmdir "${root}/etc/onboardd" 2>/dev/null || true
+    ;;
+  upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+    ;;
+  *)
+    printf 'postrm called with unsupported action: %s\n' "$1" >&2
+    exit 1
+    ;;
+esac
+
+if [ -z "$root" ] && [ -d /run/systemd/system ] && \
+   command -v deb-systemd-invoke >/dev/null 2>&1; then
+  deb-systemd-invoke daemon-reload >/dev/null
+fi

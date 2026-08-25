@@ -221,7 +221,17 @@ func evaluate(
 		return State{Stage: StageStandalone, Mode: ModeStandalone, Reason: ReasonStandaloneActive}
 	}
 	if hasAutoconnectProfile(snapshot.Profiles, ModeStandalone) {
-		return State{Stage: StageStandalone, Mode: ModeStandalone, Reason: ReasonStandaloneSelected}
+		if snapshot.DeviceState == DeviceFailed {
+			return State{Stage: StageProvisioning, Mode: ModeProvisioning, Reason: ReasonActivationFailed}
+		}
+		if timedOut {
+			return State{Stage: StageProvisioning, Mode: ModeProvisioning, Reason: ReasonActivationTimedOut}
+		}
+		return State{
+			Stage:  StageWaitingForConnectivity,
+			Mode:   ModeStandalone,
+			Reason: ReasonWaitingForActivation,
+		}
 	}
 
 	hasInfrastructure := snapshot.ActiveMode == ModeInfrastructure ||

@@ -61,6 +61,21 @@ func TestStandaloneAttemptRollsBackAndConfirmsSetup(t *testing.T) {
 	}
 }
 
+func TestStandaloneAttemptRemovesPartiallyCreatedCandidate(t *testing.T) {
+	network := newFakeStandaloneNetwork()
+	network.fail = "partial-start"
+	transition, err := NewStandalone(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transition.Attempt(context.Background(), validStandaloneOptions()); err == nil {
+		t.Fatal("Attempt() error = nil")
+	}
+	if !contains(network.calls, "delete:standalone-uuid") {
+		t.Fatalf("partial candidate was not removed: %#v", network.calls)
+	}
+}
+
 func TestStandaloneAttemptReportsRollbackFailure(t *testing.T) {
 	network := newFakeStandaloneNetwork()
 	network.fail = "rollback-after-wait"
@@ -117,6 +132,9 @@ func (network *fakeStandaloneNetwork) StartAccessPoint(
 	network.candidate = options
 	if network.fail == "start" {
 		return networkmanager.Activation{}, errors.New("test failure")
+	}
+	if network.fail == "partial-start" {
+		return networkmanager.Activation{UUID: "standalone-uuid"}, errors.New("cleanup failed")
 	}
 	return networkmanager.Activation{
 		UUID:       "standalone-uuid",

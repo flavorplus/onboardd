@@ -1,0 +1,37 @@
+#!/bin/sh
+
+set -e
+
+unit=onboardd.service
+root=${DPKG_ROOT:-}
+
+case "$1" in
+  configure)
+    # NetworkManager reads this directory when it launches its shared-mode dnsmasq.
+    # onboardd owns only onboardd.conf inside it while captive provisioning is active.
+    install -d -m 0755 "${root}/etc/NetworkManager/dnsmasq-shared.d"
+
+    if command -v deb-systemd-helper >/dev/null 2>&1; then
+      # Record the installed unit without enabling it. Configuration and password
+      # files must be completed explicitly before the first service start.
+      deb-systemd-helper update-state "$unit" >/dev/null
+    fi
+
+    if [ -z "$root" ] && [ -d /run/systemd/system ] && \
+       command -v systemctl >/dev/null 2>&1 && \
+       command -v deb-systemd-invoke >/dev/null 2>&1; then
+      deb-systemd-invoke daemon-reload >/dev/null
+      if systemctl --quiet is-active "$unit"; then
+        # During upgrade prerm leaves an active daemon running. Restart only that
+        # already-active service; a fresh or intentionally stopped install stays off.
+        deb-systemd-invoke restart "$unit" >/dev/null
+      fi
+    fi
+    ;;
+  abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+  *)
+    printf 'postinst called with unsupported action: %s\n' "$1" >&2
+    exit 1
+    ;;
+esac

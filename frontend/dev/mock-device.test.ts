@@ -83,6 +83,49 @@ test("gates the application destination until it becomes ready", () => {
   assert.equal(readyApplication.url, "http://device.local/");
 });
 
+test("connects and forgets only an onboardd-owned known network", () => {
+  const device = new MockDevice();
+  const listed = record(
+    device.handle({ method: "GET", path: "/api/v1/known-networks" }).body,
+  );
+  const networks = listed.networks as Array<Record<string, unknown>>;
+  assert.equal(networks.length, 2);
+
+  const system = networks.find((network) => network.managed_by_onboardd === false)!;
+  const rejectedConnection = device.handle({
+    method: "POST",
+    path: `/api/v1/known-networks/${String(system.uuid)}/connect`,
+    csrfToken: mockCSRFToken,
+  });
+  assert.equal(rejectedConnection.status, 403);
+  const rejected = device.handle({
+    method: "DELETE",
+    path: `/api/v1/known-networks/${String(system.uuid)}`,
+    csrfToken: mockCSRFToken,
+  });
+  assert.equal(rejected.status, 403);
+
+  const managed = networks.find((network) => network.managed_by_onboardd === true)!;
+  const accepted = device.handle({
+    method: "POST",
+    path: `/api/v1/known-networks/${String(managed.uuid)}/connect`,
+    csrfToken: mockCSRFToken,
+  });
+  assert.equal(accepted.status, 202);
+
+  const freshDevice = new MockDevice();
+  const freshForgotten = freshDevice.handle({
+    method: "DELETE",
+    path: `/api/v1/known-networks/${String(managed.uuid)}`,
+    csrfToken: mockCSRFToken,
+  });
+  assert.equal(freshForgotten.status, 200);
+  const refreshed = record(
+    freshDevice.handle({ method: "GET", path: "/api/v1/known-networks" }).body,
+  );
+  assert.equal((refreshed.networks as unknown[]).length, 1);
+});
+
 function record(value: unknown): Record<string, unknown> {
   assert.equal(typeof value, "object");
   assert.notEqual(value, null);

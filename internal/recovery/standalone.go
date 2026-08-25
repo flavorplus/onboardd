@@ -73,7 +73,7 @@ func (transition *Standalone) Attempt(
 		return networkmanager.Activation{}, transition.rollback(
 			options,
 			checkpoint.Path,
-			"",
+			activation.UUID,
 			fmt.Errorf("activate standalone profile: %w", err),
 		)
 	}

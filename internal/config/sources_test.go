@@ -133,3 +133,18 @@ func TestResolveAppliesHandoffEnvironment(t *testing.T) {
 		t.Fatalf("handoff = %+v", resolved.Handoff)
 	}
 }
+
+func TestResolveAppliesGPIORecoveryEnvironment(t *testing.T) {
+	resolved, err := Resolve(ResolveOptions{Environment: []string{
+		"ONBOARDD_RECOVERY_GPIO_ENABLED=true",
+		"ONBOARDD_RECOVERY_GPIO_CHIP=/dev/gpiochip2",
+		"ONBOARDD_RECOVERY_GPIO_LINE=23",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resolved.Recovery.GPIO.Enabled || resolved.Recovery.GPIO.Chip != "/dev/gpiochip2" ||
+		resolved.Recovery.GPIO.Line != 23 {
+		t.Fatalf("Recovery.GPIO = %+v", resolved.Recovery.GPIO)
+	}
+}

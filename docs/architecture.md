@@ -75,6 +75,7 @@ Profiles created by `onboardd` carry metadata similar to:
 onboardd.owner  = onboardd
 onboardd.role   = provisioning | standalone | infrastructure
 onboardd.schema = 1
+onboardd.pending = true  # infrastructure candidate only, removed when committed
 ```
 
 Connection IDs remain readable for administrators, but program logic must use metadata,
@@ -83,6 +84,11 @@ UUIDs, and NetworkManager properties rather than parsing profile names.
 Profiles carrying `onboardd.owner=onboardd` are managed profiles: `onboardd` may update
 or remove them. Existing profiles without that marker may be observed and used, but are
 not deleted or adopted automatically.
+
+A disk-backed infrastructure candidate carries `onboardd.pending=true` from creation
+until the validated autoconnect update commits it as durable intent. Cold-start recovery
+may delete only owned pending candidates for the configured interface. This distinguishes
+an interrupted transaction from a deliberately disabled, previously committed network.
 
 ## Transient orchestration
 
@@ -205,6 +211,8 @@ restrictions.
 ## Security boundaries
 
 - Never log Wi-Fi or AP passwords.
+- Keep structured lifecycle events limited to normalized state fields, fixed component
+  names, counters, and outcomes; never pass raw errors or D-Bus details to the logger.
 - Prefer protected password files to command-line secrets.
 - Bind privileged capabilities as narrowly as practical.
 - Manage only profiles explicitly owned by `onboardd` unless policy says otherwise.
@@ -218,6 +226,7 @@ restrictions.
 ```text
 cmd/onboardd                 process entry point
 internal/config              load, merge, and validate configuration
+internal/appliance           long-running reconciliation and resource actions
 internal/networkmanager      D-Bus adapter and domain translation
 internal/state               reconciliation and transient event engine
 internal/connectivity        local/Internet requirement evaluation
@@ -225,5 +234,45 @@ internal/captive             captive detection and portal plumbing
 internal/web                 HTTP API and embedded frontend
 internal/handoff             product application discovery and handoff
 internal/recovery            checkpoints, retries, and recovery input
+internal/observability       redacted lifecycle events and process health
+internal/systemd             optional readiness and watchdog notification transport
 integration                  product example configurations
 ```
+
+The appliance controller and private HTTP listener use separate bounded supervisors.
+Observer and captive-action failures restart reconciliation from a fresh NetworkManager
+snapshot; listener failures rebind without disrupting that reconciliation. Credential
+submissions are never replayed automatically, and an unusable selected mode converges
+to temporary provisioning after its configured grace period.
+
+Before reconciliation, a newly started controller removes only resources whose ownership
+can be proven without process memory: the `inet onboardd_captive` nftables table, the
+fixed onboardd dnsmasq fragment, owned provisioning profiles on the configured interface,
+and owned infrastructure profiles still marked pending. The private listener is bound
+first so a second live process cannot perform this cleanup after losing the port race.
+
+Manual recovery reaches the running controller through the fixed root-only Unix socket
+`/run/onboardd/control.sock`. The optional Linux GPIO adapter and the socket server both
+feed one coalescing in-memory request source; neither owns networking resources. The
+controller keeps a failed request pending across a supervised restart and acknowledges
+it only after captive entry succeeds. GPIO uses the kernel character-device v2 API with
+pull-up, debounce, and a three-second active-low hold rather than a shell command or the
+deprecated sysfs GPIO interface.
+
+The Known networks API translates saved NetworkManager Wi-Fi client profiles into a
+credential-free product model. Profiles that may apply to the configured interface are
+visible, including unmanaged profiles, but every mutation is authorized again on the
+server: the target must be inactive, onboardd-owned, tagged as infrastructure, bound to
+the configured interface, and still a Wi-Fi client profile. The browser cannot broaden
+this policy by changing `can_connect`, changing `can_forget`, or submitting another UUID.
+Activation uses the same checkpoint, connectivity requirement, exact-profile rollback,
+durable mode selection, and captive exit as a newly entered infrastructure network;
+rollback never deletes the existing target.
+
+`onboardd run` keeps operator status text on stdout and writes JSON lifecycle events to
+stderr. A concurrency-safe health tracker derives liveness and readiness from normalized
+state transitions plus bounded component recovery. The private HTTP listener exposes
+the same snapshot at `/healthz`, while a coalesced in-process change channel remains
+independent of systemd. The optional Phase 8 notifier consumes that channel and sends
+readiness, normalized status, and watchdog datagrams without putting service-manager
+behavior into the controller or changing foreground execution.

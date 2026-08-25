@@ -177,10 +177,45 @@ func TestInterruptedTransitionStopsTimer(t *testing.T) {
 	assertNoErrors(t, errorsOut)
 }
 
-func TestStandaloneSelectedDoesNotRequireInternet(t *testing.T) {
+func TestStandaloneActivationExpiresGracePeriod(t *testing.T) {
 	snapshot := Snapshot{
 		DeviceManaged: true,
 		DeviceState:   DeviceDisconnected,
+		Profiles: []Profile{
+			{UUID: "standalone", Mode: ModeStandalone, Autoconnect: true},
+		},
+	}
+	observer := newFakeObserver(snapshot)
+	manualClock := newFakeClock()
+	engine, _ := New(observer, Config{
+		Requirement: connectivity.RequirementInternet,
+		GracePeriod: time.Minute,
+	})
+	engine.clock = manualClock
+
+	ctx, cancel := context.WithCancel(context.Background())
+	transitions, errorsOut, err := engine.Run(ctx)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	waiting := waitForStage(t, transitions, StageWaitingForConnectivity)
+	if waiting.Mode != ModeStandalone || waiting.Reason != ReasonWaitingForActivation {
+		t.Fatalf("waiting state = %#v", waiting)
+	}
+	manualClock.nextTimer(t).fire()
+	timedOut := waitForStage(t, transitions, StageProvisioning)
+	if timedOut.Reason != ReasonActivationTimedOut {
+		t.Fatalf("timed-out state = %#v", timedOut)
+	}
+	cancelAndDrain(t, cancel, transitions, errorsOut)
+}
+
+func TestActiveStandaloneDoesNotRequireInternet(t *testing.T) {
+	snapshot := Snapshot{
+		DeviceManaged: true,
+		DeviceState:   DeviceActivated,
+		ActiveUUID:    "standalone",
+		ActiveMode:    ModeStandalone,
 		Connectivity: connectivity.Observation{
 			Internet: connectivity.InternetNone,
 		},
@@ -189,7 +224,7 @@ func TestStandaloneSelectedDoesNotRequireInternet(t *testing.T) {
 		},
 	}
 	state := evaluate(snapshot, connectivity.RequirementInternet, false)
-	if state.Stage != StageStandalone || state.Reason != ReasonStandaloneSelected {
+	if state.Stage != StageStandalone || state.Reason != ReasonStandaloneActive {
 		t.Fatalf("evaluate() = %#v", state)
 	}
 }

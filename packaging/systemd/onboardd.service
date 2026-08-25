@@ -1,0 +1,54 @@
+[Unit]
+Description=Onboardd network onboarding appliance
+Documentation=https://github.com/flavorplus/onboardd
+Wants=NetworkManager.service avahi-daemon.service
+After=NetworkManager.service avahi-daemon.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/onboardd run --config /etc/onboardd/config.toml
+Restart=on-failure
+RestartSec=5s
+WatchdogSec=30s
+TimeoutStartSec=90s
+TimeoutStopSec=90s
+
+# onboardd must run as root for NetworkManager policy, nftables, the private
+# recovery socket, and optional GPIO access. Keep its remaining authority narrow.
+User=root
+Group=root
+UMask=0077
+RuntimeDirectory=onboardd
+RuntimeDirectoryMode=0700
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# Configuration and credentials remain read-only. The one writable system path
+# is the owned NetworkManager dnsmasq fragment used during temporary provisioning.
+ProtectSystem=strict
+ReadWritePaths=/etc/NetworkManager/dnsmasq-shared.d
+ProtectHome=yes
+PrivateTmp=yes
+
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+# PrivateDevices is intentionally not enabled: products may opt into a configured
+# /dev/gpiochip recovery input.
+
+[Install]
+WantedBy=multi-user.target

@@ -86,6 +86,27 @@ browser before the radio transition. Automatic `window.open()` is only a progres
 enhancement, not a required path. Phase 6 uses the host-managed Avahi hostname and
 implements discovery, the application link, and standalone QR handoff.
 
-## Resolve before the relevant later phase
+## Resolved during Phase 8
 
-- `.deb` ownership, capabilities, and service hardening: Phase 8.
+### Service privilege and hardening
+
+The system service runs as root because NetworkManager policy, nftables, the owned
+dnsmasq fragment, and optional GPIO access do not reduce to one portable unprivileged
+capability set. The unit bounds capabilities to `CAP_NET_ADMIN`, makes the system and
+home trees read-only, and grants write access only to the owned NetworkManager dnsmasq
+directory and `/run/onboardd`. `PrivateDevices` remains off so configured GPIO recovery
+continues to work.
+
+### Release build contract
+
+Release versions use a v-prefixed semantic version and are injected into the existing
+`onboardd --version` output. One dependency-free repository script produces stripped,
+static Linux ARM64 and AMD64 binaries plus SHA-256 checksums below `dist/VERSION/`.
+Release builds disable VCS stamping, Go build IDs, CGO, user `GOFLAGS`, and optional Go
+experiments, and fix the architecture baselines so repeated builds with the same source,
+dependencies, version, and Go toolchain are byte-identical.
+
+## Resolve before the relevant later slice
+
+- Debian conffile ownership, upgrade, removal, and purge behavior: Phase 8 package
+  slice.

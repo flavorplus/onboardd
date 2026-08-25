@@ -1,0 +1,11 @@
+Package: onboardd
+Version: @VERSION@
+Architecture: @ARCHITECTURE@
+Maintainer: flavorplus <jmavermeulen@gmail.com>
+Section: net
+Priority: optional
+Depends: network-manager, dnsmasq-base, avahi-daemon, nftables, init-system-helpers
+Homepage: https://github.com/flavorplus/onboardd
+Description: network onboarding daemon for headless Linux appliances
+ onboardd provides Wi-Fi provisioning, a captive setup portal, persistent
+ standalone access-point operation, and recovery for product appliances.

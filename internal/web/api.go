@@ -27,9 +27,13 @@ const (
 type setupService interface {
 	Bootstrap(context.Context) (setup.Bootstrap, error)
 	Networks(context.Context) ([]setup.Network, error)
+	KnownNetworks(context.Context) ([]setup.KnownNetwork, error)
+	ForgetKnownNetwork(context.Context, string) error
 	StartConnection(setup.ConnectionRequest) (setup.Operation, error)
+	StartKnownNetwork(context.Context, string) (setup.Operation, error)
 	StartStandalone() (setup.Operation, error)
 	BeginOperation(string) bool
+	CancelPendingOperation(string) bool
 	Operation(string) (setup.Operation, bool)
 }
 
@@ -75,6 +79,9 @@ func NewAPI(service setupService, canonicalOrigin string, options ...Options) (*
 	api.mux.HandleFunc("GET /api/v1/setup", api.getSetup)
 	api.mux.HandleFunc("GET /api/v1/branding/logo", api.getLogo)
 	api.mux.HandleFunc("GET /api/v1/networks", api.getNetworks)
+	api.mux.HandleFunc("GET /api/v1/known-networks", api.getKnownNetworks)
+	api.mux.HandleFunc("DELETE /api/v1/known-networks/{uuid}", api.deleteKnownNetwork)
+	api.mux.HandleFunc("POST /api/v1/known-networks/{uuid}/connect", api.postKnownNetwork)
 	api.mux.HandleFunc("POST /api/v1/connections", api.postConnection)
 	api.mux.HandleFunc("POST /api/v1/standalone", api.postStandalone)
 	api.mux.HandleFunc("GET /api/v1/operations/{id}", api.getOperation)
@@ -192,6 +199,62 @@ func (api *API) getNetworks(response http.ResponseWriter, request *http.Request)
 	}{Networks: networks})
 }
 
+func (api *API) getKnownNetworks(response http.ResponseWriter, request *http.Request) {
+	known, err := api.service.KnownNetworks(request.Context())
+	if err != nil {
+		writeServiceError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, struct {
+		Networks []setup.KnownNetwork `json:"networks"`
+	}{Networks: known})
+}
+
+func (api *API) deleteKnownNetwork(response http.ResponseWriter, request *http.Request) {
+	if !api.allowMutation(response, request) {
+		return
+	}
+	uuid := strings.ToLower(request.PathValue("uuid"))
+	if !validProfileUUID(uuid) {
+		writeError(response, http.StatusBadRequest, setup.Failure{
+			Code:    "invalid_profile_id",
+			Message: "The saved network identifier is invalid.",
+		})
+		return
+	}
+	if err := api.service.ForgetKnownNetwork(request.Context(), uuid); err != nil {
+		writeServiceError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, struct {
+		Forgotten string `json:"forgotten"`
+	}{Forgotten: uuid})
+}
+
+func (api *API) postKnownNetwork(response http.ResponseWriter, request *http.Request) {
+	if !api.allowMutation(response, request) {
+		return
+	}
+	uuid := strings.ToLower(request.PathValue("uuid"))
+	if !validProfileUUID(uuid) {
+		writeError(response, http.StatusBadRequest, setup.Failure{
+			Code:    "invalid_profile_id",
+			Message: "The saved network identifier is invalid.",
+		})
+		return
+	}
+	operation, err := api.service.StartKnownNetwork(request.Context(), uuid)
+	if err != nil {
+		writeServiceError(response, err)
+		return
+	}
+	if err := api.acceptOperation(response, operation); err != nil {
+		api.service.CancelPendingOperation(operation.ID)
+		return
+	}
+	api.service.BeginOperation(operation.ID)
+}
+
 type connectionPayload struct {
 	SSID     string `json:"ssid"`
 	Password string `json:"password"`
@@ -221,15 +284,34 @@ func (api *API) postConnection(response http.ResponseWriter, request *http.Reque
 		writeServiceError(response, err)
 		return
 	}
-	api.acceptOperation(response, operation)
+	if err := api.acceptOperation(response, operation); err != nil {
+		api.service.CancelPendingOperation(operation.ID)
+		return
+	}
 	api.service.BeginOperation(operation.ID)
 }
 
-func (api *API) acceptOperation(response http.ResponseWriter, operation setup.Operation) {
-	writeJSON(response, http.StatusAccepted, struct {
+func (api *API) acceptOperation(response http.ResponseWriter, operation setup.Operation) error {
+	payload, err := json.Marshal(struct {
 		Operation setup.Operation `json:"operation"`
 	}{Operation: operation})
-	_ = http.NewResponseController(response).Flush()
+	if err != nil {
+		return fmt.Errorf("encode accepted setup operation: %w", err)
+	}
+	payload = append(payload, '\n')
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.WriteHeader(http.StatusAccepted)
+	written, err := response.Write(payload)
+	if err != nil {
+		return fmt.Errorf("write accepted setup operation: %w", err)
+	}
+	if written != len(payload) {
+		return fmt.Errorf("write accepted setup operation: %w", io.ErrShortWrite)
+	}
+	if err := http.NewResponseController(response).Flush(); err != nil {
+		return fmt.Errorf("flush accepted setup operation: %w", err)
+	}
+	return nil
 }
 
 type standalonePayload struct {
@@ -256,7 +338,10 @@ func (api *API) postStandalone(response http.ResponseWriter, request *http.Reque
 		writeServiceError(response, err)
 		return
 	}
-	api.acceptOperation(response, operation)
+	if err := api.acceptOperation(response, operation); err != nil {
+		api.service.CancelPendingOperation(operation.ID)
+		return
+	}
 	api.service.BeginOperation(operation.ID)
 }
 
@@ -381,6 +466,16 @@ func validPSK(password string) bool {
 	return true
 }
 
+func validProfileUUID(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' ||
+		value[18] != '-' || value[23] != '-' {
+		return false
+	}
+	plain := strings.ReplaceAll(value, "-", "")
+	_, err := hex.DecodeString(plain)
+	return err == nil
+}
+
 func normalizeOrigin(value string) (string, error) {
 	parsed, err := url.Parse(value)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
@@ -411,8 +506,15 @@ func writeServiceError(response http.ResponseWriter, err error) {
 	var public *setup.PublicError
 	if errors.As(err, &public) {
 		status := http.StatusBadRequest
-		if public.Failure.Code == "mode_unavailable" {
+		switch public.Failure.Code {
+		case "mode_unavailable", "network_read_only":
 			status = http.StatusForbidden
+		case "known_network_not_found":
+			status = http.StatusNotFound
+		case "active_network":
+			status = http.StatusConflict
+		case "profile_change_in_progress":
+			status = http.StatusConflict
 		}
 		writeError(response, status, public.Failure)
 		return

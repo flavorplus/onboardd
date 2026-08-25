@@ -65,6 +65,20 @@
       "request": "launch",
       "mode": "test",
       "program": "${workspaceFolder}/internal/frontend"
+    },
+    {
+      "name": "Debug Phase 7 appliance tests",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/internal/appliance"
+    },
+    {
+      "name": "Debug Phase 7 recovery tests",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/internal/recovery"
     }
   ]
 }

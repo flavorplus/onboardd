@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -41,6 +42,7 @@ type Config struct {
 	Network       Network  `toml:"network"`
 	Portal        Portal   `toml:"portal"`
 	Handoff       Handoff  `toml:"handoff"`
+	Recovery      Recovery `toml:"recovery"`
 }
 
 type Product struct {
@@ -82,6 +84,18 @@ type Standalone struct {
 
 type Portal struct {
 	ListenerPort uint16 `toml:"listener_port"`
+}
+
+// Recovery configures optional physical recovery inputs. Manual recovery over
+// the local control socket is always available while `onboardd run` is active.
+type Recovery struct {
+	GPIO RecoveryGPIO `toml:"gpio"`
+}
+
+type RecoveryGPIO struct {
+	Enabled bool   `toml:"enabled"`
+	Chip    string `toml:"chip"`
+	Line    uint32 `toml:"line"`
 }
 
 // Handoff configures the optional product application destination. The stable setup
@@ -127,6 +141,10 @@ func Defaults() Config {
 		},
 		Portal:  Portal{ListenerPort: 18080},
 		Handoff: Handoff{},
+		Recovery: Recovery{GPIO: RecoveryGPIO{
+			Chip: "/dev/gpiochip0",
+			Line: 17,
+		}},
 	}
 }
 
@@ -195,6 +213,9 @@ func (config Config) Validate() error {
 		return err
 	}
 	if err := validatePortal(config.Portal); err != nil {
+		return err
+	}
+	if err := validateRecovery(config.Recovery); err != nil {
 		return err
 	}
 	return validateHandoff(config.Handoff, false)
@@ -266,6 +287,13 @@ func validatePortal(portal Portal) error {
 	}
 	if portal.ListenerPort == CaptivePublicPort {
 		return fmt.Errorf("portal.listener_port must differ from the fixed captive public port %d", CaptivePublicPort)
+	}
+	return nil
+}
+
+func validateRecovery(recovery Recovery) error {
+	if !filepath.IsAbs(recovery.GPIO.Chip) {
+		return errors.New("recovery.gpio.chip must be an absolute device path")
 	}
 	return nil
 }

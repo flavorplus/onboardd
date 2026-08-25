@@ -269,10 +269,24 @@ type Profile struct {
 	Owned          bool   `json:"owned_by_onboardd"`
 	Role           Role   `json:"role,omitempty"`
 	MetadataSchema string `json:"metadata_schema,omitempty"`
+	Pending        bool   `json:"pending"`
 	Persistence    string `json:"persistence"`
 	Filename       string `json:"filename,omitempty"`
 	Unsaved        bool   `json:"unsaved"`
 	Flags          uint32 `json:"flags"`
+}
+
+// IsInfrastructureWiFi reports whether the profile describes a Wi-Fi client
+// connection rather than an access point or another NetworkManager connection type.
+func (profile Profile) IsInfrastructureWiFi() bool {
+	return profile.Type == "802-11-wireless" &&
+		(profile.Mode == "" || profile.Mode == "infrastructure")
+}
+
+// AppliesTo reports whether NetworkManager may use the profile on the requested
+// interface. An empty interface binding means the profile is not device-specific.
+func (profile Profile) AppliesTo(interfaceName string) bool {
+	return profile.Interface == "" || profile.Interface == interfaceName
 }
 
 // Security is a user-facing summary of access-point security capabilities.

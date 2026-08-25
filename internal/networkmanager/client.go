@@ -222,6 +222,7 @@ func (c *Client) Profiles(ctx context.Context) ([]Profile, error) {
 }
 
 // DeleteOwnedProfile deletes a profile only after verifying onboardd ownership metadata.
+// An already-absent UUID is success so interrupted cleanup remains idempotent.
 func (c *Client) DeleteOwnedProfile(ctx context.Context, uuid string) error {
 	if !validUUID(uuid) {
 		return errors.New("UUID must use the canonical 8-4-4-4-12 format")
@@ -237,16 +238,100 @@ func (c *Client) DeleteOwnedProfile(ctx context.Context, uuid string) error {
 		if !profile.Owned {
 			return fmt.Errorf("refusing to delete profile %s because it is not owned by onboardd", uuid)
 		}
-		if err := c.object(dbus.ObjectPath(profile.Path)).CallWithContext(
-			ctx,
-			settingsConnectionIface+".Delete",
-			0,
-		).Store(); err != nil {
-			return fmt.Errorf("delete onboardd profile %s: %w", uuid, err)
+		return c.deleteProfile(ctx, profile)
+	}
+	return nil
+}
+
+// DeleteOwnedInfrastructureProfile deletes only an onboardd-owned Wi-Fi client
+// profile bound to interfaceName. This narrower operation is the authorization
+// boundary used by the product-facing Known networks API.
+func (c *Client) DeleteOwnedInfrastructureProfile(
+	ctx context.Context,
+	interfaceName string,
+	uuid string,
+) error {
+	if interfaceName == "" {
+		return errors.New("interface name is required")
+	}
+	if !validUUID(uuid) {
+		return errors.New("uuid must use the canonical 8-4-4-4-12 format")
+	}
+	normalizedUUID := strings.ToLower(uuid)
+	status, err := c.Status(ctx, interfaceName)
+	if err != nil {
+		return err
+	}
+	if status.Device.ActiveUUID == normalizedUUID {
+		return fmt.Errorf("refusing to delete active profile %s", normalizedUUID)
+	}
+	profiles, err := c.Profiles(ctx)
+	if err != nil {
+		return err
+	}
+	for _, profile := range profiles {
+		if profile.UUID != normalizedUUID {
+			continue
 		}
-		return nil
+		if !profile.Owned || profile.Role != RoleInfrastructure ||
+			profile.Interface != interfaceName || !profile.IsInfrastructureWiFi() {
+			return fmt.Errorf(
+				"refusing to delete profile %s because it is not an onboardd-owned infrastructure profile on %s",
+				uuid,
+				interfaceName,
+			)
+		}
+		return c.deleteProfile(ctx, profile)
 	}
 	return fmt.Errorf("profile %s was not found", uuid)
+}
+
+func (c *Client) deleteProfile(ctx context.Context, profile Profile) error {
+	if err := c.object(dbus.ObjectPath(profile.Path)).CallWithContext(
+		ctx,
+		settingsConnectionIface+".Delete",
+		0,
+	).Store(); err != nil {
+		return fmt.Errorf("delete onboardd profile %s: %w", profile.UUID, err)
+	}
+	return nil
+}
+
+// DeletePendingInfrastructureProfiles removes only uncommitted profiles created by an
+// interrupted onboardd transition on the exact interface. Committed and unmanaged
+// profiles are outside this recovery boundary.
+func (c *Client) DeletePendingInfrastructureProfiles(
+	ctx context.Context,
+	interfaceName string,
+) error {
+	if interfaceName == "" {
+		return errors.New("interface name is required")
+	}
+	profiles, err := c.Profiles(ctx)
+	if err != nil {
+		return fmt.Errorf("list profiles for pending candidate cleanup: %w", err)
+	}
+	for _, profile := range pendingProfiles(profiles, interfaceName) {
+		if err := c.deleteProfile(ctx, profile); err != nil {
+			if isObjectGone(err) {
+				continue
+			}
+			return fmt.Errorf("delete pending infrastructure candidate: %w", err)
+		}
+	}
+	return nil
+}
+
+func pendingProfiles(profiles []Profile, interfaceName string) []Profile {
+	var pending []Profile
+	for _, profile := range profiles {
+		if profile.Owned && profile.Pending &&
+			profile.Interface == interfaceName &&
+			profile.Role == RoleInfrastructure {
+			pending = append(pending, profile)
+		}
+	}
+	return pending
 }
 
 // CreateCheckpoint protects the requested Wi-Fi device with automatic rollback.
@@ -668,6 +753,16 @@ func (c *Client) addAndActivate(
 	).Store(&profilePath, &result); err != nil {
 		return Activation{}, fmt.Errorf("add %s profile: %w", role, err)
 	}
+	persistenceName := "memory"
+	if persistence == PersistenceDisk {
+		persistenceName = "disk"
+	}
+	partialActivation := Activation{
+		ProfilePath: string(profilePath),
+		UUID:        uuid,
+		Role:        role,
+		Persistence: persistenceName,
+	}
 
 	var activePath dbus.ObjectPath
 	if err := c.object(managerPath).CallWithContext(
@@ -686,7 +781,7 @@ func (c *Client) addAndActivate(
 			0,
 		).Store()
 		if deleteErr != nil {
-			return Activation{}, fmt.Errorf(
+			return partialActivation, fmt.Errorf(
 				"activate %s profile: %w (cleanup also failed: %v)",
 				role,
 				err,
@@ -696,10 +791,6 @@ func (c *Client) addAndActivate(
 		return Activation{}, fmt.Errorf("activate %s profile: %w", role, err)
 	}
 
-	persistenceName := "memory"
-	if persistence == PersistenceDisk {
-		persistenceName = "disk"
-	}
 	return Activation{
 		ProfilePath: string(profilePath),
 		ActivePath:  string(activePath),
@@ -850,6 +941,7 @@ func (c *Client) profile(ctx context.Context, path dbus.ObjectPath) (Profile, er
 		Owned:          owner,
 		Role:           Role(metadata[roleKey]),
 		MetadataSchema: metadata[schemaKey],
+		Pending:        metadata[pendingKey] == "true",
 		Persistence:    profilePersistence(filename),
 		Filename:       filename,
 		Unsaved:        unsaved,

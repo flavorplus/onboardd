@@ -3,6 +3,7 @@ import type {
   Branding,
   Capabilities,
   Mode,
+  KnownNetwork,
   Network,
   Operation,
   OperationKind,
@@ -67,6 +68,26 @@ export class MockDevice {
   private operation?: InternalOperation;
   private sequence = 0;
   private readonly branding: Branding;
+  private knownNetworks: KnownNetwork[] = [
+    {
+      uuid: "329cdb0f-d696-4f63-a17e-84ac66582f43",
+      ssid: "Studio Wi-Fi",
+      managed_by_onboardd: true,
+      active: false,
+      automatic: true,
+      can_connect: true,
+      can_forget: true,
+    },
+    {
+      uuid: "b01a1c10-ce1e-40e7-9fe2-7ebcf30a43c7",
+      ssid: "Venue system Wi-Fi",
+      managed_by_onboardd: false,
+      active: false,
+      automatic: true,
+      can_connect: false,
+      can_forget: false,
+    },
+  ];
 
   constructor(policy: MockModePolicy = "both", brand: MockBrand = "default") {
     this.capabilities = {
@@ -83,6 +104,36 @@ export class MockDevice {
     if (request.method === "GET" && request.path === "/api/v1/networks") {
       if (!this.capabilities.network) return this.modeUnavailable("Wi-Fi network");
       return this.json(200, { networks });
+    }
+    if (request.method === "GET" && request.path === "/api/v1/known-networks") {
+      if (!this.capabilities.network) return this.modeUnavailable("Wi-Fi network");
+      return this.json(200, { networks: this.knownNetworks });
+    }
+    const knownNetworkPrefix = "/api/v1/known-networks/";
+    if (request.method === "DELETE" && request.path.startsWith(knownNetworkPrefix)) {
+      if (!this.mutationAllowed(request)) return this.requestNotAllowed();
+      if (!this.capabilities.network) return this.modeUnavailable("Wi-Fi network");
+      return this.forgetKnownNetwork(
+        decodeURIComponent(request.path.slice(knownNetworkPrefix.length)),
+      );
+    }
+    const knownNetworkConnectSuffix = "/connect";
+    if (
+      request.method === "POST" &&
+      request.path.startsWith(knownNetworkPrefix) &&
+      request.path.endsWith(knownNetworkConnectSuffix)
+    ) {
+      if (!this.mutationAllowed(request)) return this.requestNotAllowed();
+      if (!this.capabilities.network) return this.modeUnavailable("Wi-Fi network");
+      return this.startKnownNetwork(
+        decodeURIComponent(
+          request.path.slice(
+            knownNetworkPrefix.length,
+            -knownNetworkConnectSuffix.length,
+          ),
+        ),
+        now,
+      );
     }
     if (request.method === "POST" && request.path === "/api/v1/connections") {
       if (!this.mutationAllowed(request)) return this.requestNotAllowed();
@@ -134,6 +185,49 @@ export class MockDevice {
     }
     const outcome = input.password === rejectedMockPassword ? "failed" : "succeeded";
     return this.accept("connect", input.ssid, outcome, now);
+  }
+
+  private forgetKnownNetwork(uuid: string): MockResponse {
+    const index = this.knownNetworks.findIndex((network) => network.uuid === uuid);
+    if (index < 0) {
+      return this.error(404, "known_network_not_found", "This saved network no longer exists.");
+    }
+    const network = this.knownNetworks[index]!;
+    if (!network.managed_by_onboardd) {
+      return this.error(
+        403,
+        "network_read_only",
+        "This network profile is managed outside onboardd and cannot be forgotten here.",
+      );
+    }
+    if (network.active) {
+      return this.error(
+        409,
+        "active_network",
+        "The network currently in use cannot be forgotten. Connect to another network first.",
+      );
+    }
+    this.knownNetworks.splice(index, 1);
+    return this.json(200, { forgotten: uuid });
+  }
+
+  private startKnownNetwork(uuid: string, now: number): MockResponse {
+    if (this.operationActive(now)) return this.conflict(now);
+    const network = this.knownNetworks.find((candidate) => candidate.uuid === uuid);
+    if (!network) {
+      return this.error(404, "known_network_not_found", "This saved network no longer exists.");
+    }
+    if (network.active) {
+      return this.error(409, "active_network", "The device is already connected to this network.");
+    }
+    if (!network.can_connect) {
+      return this.error(
+        403,
+        "network_read_only",
+        "This network profile is managed outside onboardd and cannot be activated here.",
+      );
+    }
+    return this.accept("connect", network.ssid, "succeeded", now);
   }
 
   private startStandalone(body: unknown, now: number): MockResponse {

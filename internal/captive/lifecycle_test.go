@@ -90,6 +90,50 @@ func TestLifecycleStartAndStopOrdering(t *testing.T) {
 	}
 }
 
+func TestSessionRetriesOnlyIncompleteExitCleanup(t *testing.T) {
+	calls := []string{}
+	network := &fakeNetworkManager{calls: &calls}
+	dns := &fakeDNSConfigurer{calls: &calls}
+	redirect := &fakePortRedirector{calls: &calls, removeFailures: 1}
+	lifecycle, err := NewLifecycle(
+		network,
+		dns,
+		redirect,
+		func(context.Context, string, string) (net.Listener, error) {
+			return newMemoryListener(), nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := lifecycle.Start(
+		context.Background(),
+		validStartOptions(),
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.ExitCaptive(context.Background()); err == nil {
+		t.Fatal("first ExitCaptive() error = nil")
+	}
+	if err := session.ExitCaptive(context.Background()); err != nil {
+		t.Fatalf("second ExitCaptive() error = %v", err)
+	}
+	if got := countCalls(calls, "redirect-remove"); got != 2 {
+		t.Fatalf("redirect remove calls = %d, want 2; calls = %#v", got, calls)
+	}
+	if got := countCalls(calls, "delete:provisioning-uuid"); got != 1 {
+		t.Fatalf("profile delete calls = %d, want 1; calls = %#v", got, calls)
+	}
+	if got := countCalls(calls, "dns-remove"); got != 1 {
+		t.Fatalf("DNS remove calls = %d, want 1; calls = %#v", got, calls)
+	}
+	if err := session.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
 func TestLifecycleStartUnwindsFailures(t *testing.T) {
 	stages := []struct {
 		name       string
@@ -237,13 +281,15 @@ func containsCall(calls []string, want string) bool {
 }
 
 type fakeDNSConfigurer struct {
-	calls *[]string
-	fail  string
+	calls          *[]string
+	fail           string
+	removeFailures int
 }
 
 type fakePortRedirector struct {
-	calls *[]string
-	fail  string
+	calls          *[]string
+	fail           string
+	removeFailures int
 }
 
 func (redirect *fakePortRedirector) Install(
@@ -264,6 +310,10 @@ func (redirect *fakePortRedirector) Install(
 
 func (redirect *fakePortRedirector) Remove(context.Context) error {
 	*redirect.calls = append(*redirect.calls, "redirect-remove")
+	if redirect.removeFailures > 0 {
+		redirect.removeFailures--
+		return errors.New("test removal failure")
+	}
 	return nil
 }
 
@@ -277,12 +327,20 @@ func (dns *fakeDNSConfigurer) Install(address netip.Addr) error {
 
 func (dns *fakeDNSConfigurer) Remove() error {
 	*dns.calls = append(*dns.calls, "dns-remove")
+	if dns.removeFailures > 0 {
+		dns.removeFailures--
+		return errors.New("test removal failure")
+	}
 	return nil
 }
 
 type fakeNetworkManager struct {
-	calls *[]string
-	fail  string
+	calls              *[]string
+	fail               string
+	deleteFailures     int
+	finalizedInterface string
+	finalizedRole      networkmanager.Role
+	finalizedKeepUUID  string
 }
 
 func (network *fakeNetworkManager) StartAccessPoint(
@@ -325,13 +383,16 @@ func (network *fakeNetworkManager) Status(context.Context, string) (networkmanag
 }
 
 func (network *fakeNetworkManager) FinalizeTransition(
-	context.Context,
-	string,
-	networkmanager.Role,
-	string,
-	string,
+	_ context.Context,
+	interfaceName string,
+	role networkmanager.Role,
+	_ string,
+	keepUUID string,
 ) error {
 	*network.calls = append(*network.calls, "finalize")
+	network.finalizedInterface = interfaceName
+	network.finalizedRole = role
+	network.finalizedKeepUUID = keepUUID
 	if network.fail == "finalize" {
 		return errors.New("test failure")
 	}
@@ -340,5 +401,9 @@ func (network *fakeNetworkManager) FinalizeTransition(
 
 func (network *fakeNetworkManager) DeleteOwnedProfile(_ context.Context, uuid string) error {
 	*network.calls = append(*network.calls, "delete:"+uuid)
+	if network.deleteFailures > 0 {
+		network.deleteFailures--
+		return errors.New("test deletion failure")
+	}
 	return nil
 }

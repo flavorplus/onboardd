@@ -1,4 +1,4 @@
-import type { Bootstrap, Network, Operation } from "./model.ts";
+import type { Bootstrap, KnownNetwork, Network, Operation } from "./model.ts";
 
 interface ErrorBody {
   error?: {
@@ -39,6 +39,26 @@ export class SetupAPI {
     return result.networks;
   }
 
+  async knownNetworks(): Promise<KnownNetwork[]> {
+    const result = await this.request<{ networks: KnownNetwork[] }>("/api/v1/known-networks");
+    return result.networks;
+  }
+
+  async forgetKnownNetwork(uuid: string): Promise<void> {
+    await this.request<{ forgotten: string }>(
+      `/api/v1/known-networks/${encodeURIComponent(uuid)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async connectKnownNetwork(uuid: string): Promise<Operation> {
+    const result = await this.request<{ operation: Operation }>(
+      `/api/v1/known-networks/${encodeURIComponent(uuid)}/connect`,
+      { method: "POST" },
+    );
+    return result.operation;
+  }
+
   async connect(input: {
     ssid: string;
     password: string;
@@ -72,6 +92,9 @@ export class SetupAPI {
     headers.set("Accept", "application/json");
     if (init.body !== undefined) {
       headers.set("Content-Type", "application/json");
+    }
+    const method = (init.method ?? "GET").toUpperCase();
+    if (method !== "GET" && method !== "HEAD") {
       headers.set("X-Onboardd-CSRF", this.csrfToken);
     }
     const controller = new AbortController();

@@ -132,6 +132,7 @@ func configuredSetupOptions(resolved appconfig.Config, hostname string) (interac
 		RestorationWait:     30 * time.Second,
 		ReadyLabel:          resolved.Product.Name + " setup",
 		Hostname:            hostname,
+		RecoveryGPIO:        resolved.Recovery.GPIO,
 	}, nil
 }
 
@@ -160,6 +161,7 @@ type interactiveSetupOptions struct {
 	RestorationWait     time.Duration
 	ReadyLabel          string
 	Hostname            string
+	RecoveryGPIO        appconfig.RecoveryGPIO
 }
 
 func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, stdout io.Writer) error {
@@ -257,6 +259,11 @@ func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, s
 		defer cancel()
 		return errors.Join(cause, publisher.Close(cleanupContext), session.Stop(cleanupContext))
 	}
+	if err := client.DeletePendingInfrastructureProfiles(ctx, options.Interface); err != nil {
+		return cleanupAfterError(
+			fmt.Errorf("recover interrupted infrastructure candidates: %w", err),
+		)
+	}
 	infrastructureTransition, err := recovery.NewInfrastructure(client)
 	if err != nil {
 		return cleanupAfterError(err)
@@ -324,12 +331,21 @@ func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, s
 			serveErr = errors.New("setup HTTP listener stopped unexpectedly")
 		}
 	}
-	cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), 15*time.Second)
+	operationContext, cancelOperations := context.WithTimeout(
+		context.Background(),
+		options.RestorationWait+applianceCleanupTimeout,
+	)
+	operationErr := service.Shutdown(operationContext)
+	cancelOperations()
+	cleanupContext, cancelCleanup := context.WithTimeout(
+		context.Background(),
+		applianceCleanupTimeout,
+	)
 	defer cancelCleanup()
 	discoveryErr := publisher.Close(cleanupContext)
 	stopErr := session.Stop(cleanupContext)
-	if serveErr != nil || discoveryErr != nil || stopErr != nil {
-		return errors.Join(serveErr, discoveryErr, stopErr)
+	if serveErr != nil || operationErr != nil || discoveryErr != nil || stopErr != nil {
+		return errors.Join(serveErr, operationErr, discoveryErr, stopErr)
 	}
 	fmt.Fprintln(stdout, "interactive setup stopped and temporary resources were removed")
 	return nil

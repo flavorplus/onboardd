@@ -63,13 +63,49 @@ func TestRetiredDebugMutationCommandIsRejected(t *testing.T) {
 	}
 }
 
-func TestRootHelpIncludesConfiguredSetup(t *testing.T) {
+func TestRootHelpIncludesConfiguredCommands(t *testing.T) {
 	var stdout bytes.Buffer
 	if err := Run(context.Background(), []string{"help"}, &stdout, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "onboardd setup") || !strings.Contains(stdout.String(), "embedded setup portal") {
-		t.Fatalf("root help does not describe configured setup:\n%s", stdout.String())
+	for _, expected := range []string{"onboardd run", "onboardd setup", "onboardd recover", "manual recovery"} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Errorf("root help is missing %q:\n%s", expected, stdout.String())
+		}
+	}
+}
+
+func TestRecoverRejectsArgumentsBeforeContactingRuntime(t *testing.T) {
+	err := Run(
+		context.Background(),
+		[]string{"recover", "now"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "unexpected arguments") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestRunHelpIsSuccessful(t *testing.T) {
+	var stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"run", "-h"}, &bytes.Buffer{}, &stderr); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(stderr.String(), "-config") || strings.Contains(stderr.String(), "password") {
+		t.Fatalf("run help is missing operational flags or exposes secrets:\n%s", stderr.String())
+	}
+}
+
+func TestRunRequiresExplicitFileToExistBeforeRuntime(t *testing.T) {
+	err := Run(
+		context.Background(),
+		[]string{"run", "--config", filepath.Join(t.TempDir(), "missing.toml")},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "open configuration") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
@@ -131,6 +167,23 @@ func TestInteractiveSetupValidatesProfilesBeforeDBus(t *testing.T) {
 	}
 }
 
+func TestManagedApplianceValidatesProfilesBeforeDBus(t *testing.T) {
+	err := runManagedAppliance(context.Background(), interactiveSetupOptions{
+		Interface:           "wlan0",
+		ProvisioningSSID:    "Setup",
+		ProvisioningPSK:     "short",
+		ProvisioningAddress: mustPrefix(t, "10.42.0.1/24"),
+		Band:                "bg",
+		PublicHTTPPort:      80,
+		ListenerHTTPPort:    18080,
+		Assets:              fstest.MapFS{"index.html": {Data: []byte("compiled")}},
+		NetworkEnabled:      true,
+	}, &bytes.Buffer{}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "invalid provisioning network") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestReadSecurePasswordFilePermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "password")
 	if err := os.WriteFile(path, []byte("test-password\n"), 0o644); err != nil {
@@ -167,6 +220,9 @@ func TestConfiguredSetupOptionsUseRenderedConfigAndEmbeddedAssets(t *testing.T) 
 	configured.Network.Standalone.PasswordFile = standalonePassword
 	configured.Handoff.ShowStandaloneCredentials = true
 	configured.Portal.ListenerPort = 19000
+	configured.Recovery.GPIO.Enabled = true
+	configured.Recovery.GPIO.Chip = "/dev/gpiochip2"
+	configured.Recovery.GPIO.Line = 23
 	rendered, err := appconfig.RenderTemplates(
 		configured,
 		appconfig.Identity{DeviceID: "AB12CD34", Hostname: "inkypi"},
@@ -180,6 +236,10 @@ func TestConfiguredSetupOptionsUseRenderedConfigAndEmbeddedAssets(t *testing.T) 
 	}
 	if options.Interface != "wlan-test" || options.ListenerHTTPPort != 19000 {
 		t.Fatalf("runtime options = %+v", options)
+	}
+	if !options.RecoveryGPIO.Enabled || options.RecoveryGPIO.Chip != "/dev/gpiochip2" ||
+		options.RecoveryGPIO.Line != 23 {
+		t.Fatalf("recovery gpio options = %+v", options.RecoveryGPIO)
 	}
 	if options.ProvisioningSSID != "InkyPi-Setup-AB12CD34" || options.StandaloneSSID != "InkyPi-AB12CD34" {
 		t.Fatalf("rendered SSIDs = %q, %q", options.ProvisioningSSID, options.StandaloneSSID)

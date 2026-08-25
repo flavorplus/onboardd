@@ -199,15 +199,16 @@ func debugProfiles(ctx context.Context, args []string, stdout, stderr io.Writer)
 	}
 
 	table := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(table, "ID\tUUID\tROLE\tOWNED\tAUTO\tPRIORITY\tSTORAGE\tUNSAVED\tSSID")
+	fmt.Fprintln(table, "ID\tUUID\tROLE\tOWNED\tPENDING\tAUTO\tPRIORITY\tSTORAGE\tUNSAVED\tSSID")
 	for _, profile := range profiles {
 		fmt.Fprintf(
 			table,
-			"%s\t%s\t%s\t%t\t%t\t%d\t%s\t%t\t%s\n",
+			"%s\t%s\t%s\t%t\t%t\t%t\t%d\t%s\t%t\t%s\n",
 			profile.ID,
 			profile.UUID,
 			emptyAsDash(string(profile.Role)),
 			profile.Owned,
+			profile.Pending,
 			profile.Autoconnect,
 			profile.Priority,
 			profile.Persistence,

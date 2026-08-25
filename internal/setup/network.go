@@ -16,10 +16,12 @@ type networkClient interface {
 	Status(context.Context, string) (networkmanager.Status, error)
 	Profiles(context.Context) ([]networkmanager.Profile, error)
 	Scan(context.Context, string, time.Duration) ([]networkmanager.AccessPoint, error)
+	DeleteOwnedInfrastructureProfile(context.Context, string, string) error
 }
 
 type infrastructureTransition interface {
 	Attempt(context.Context, recovery.InfrastructureOptions) (networkmanager.Activation, error)
+	AttemptSaved(context.Context, recovery.SavedInfrastructureOptions) (networkmanager.Activation, error)
 }
 
 type standaloneTransition interface {
@@ -158,6 +160,65 @@ func (backend *NetworkBackend) Networks(ctx context.Context) ([]Network, error) 
 	return networks, nil
 }
 
+// KnownNetworks returns saved Wi-Fi client profiles that may apply to the configured
+// interface. Only onboardd-owned profiles on the exact interface are forgettable.
+func (backend *NetworkBackend) KnownNetworks(ctx context.Context) ([]KnownNetwork, error) {
+	status, err := backend.network.Status(ctx, backend.options.Interface)
+	if err != nil {
+		return nil, err
+	}
+	profiles, err := backend.network.Profiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	known := make([]KnownNetwork, 0, len(profiles))
+	for _, profile := range profiles {
+		if profile.SSID == "" || !profile.IsInfrastructureWiFi() ||
+			!profile.AppliesTo(backend.options.Interface) {
+			continue
+		}
+		managed := profile.Owned && profile.Role == networkmanager.RoleInfrastructure &&
+			profile.Interface == backend.options.Interface
+		active := profile.UUID == status.Device.ActiveUUID
+		known = append(known, KnownNetwork{
+			UUID:       profile.UUID,
+			SSID:       profile.SSID,
+			Managed:    managed,
+			Active:     active,
+			Automatic:  profile.Autoconnect,
+			CanConnect: managed && !active,
+			CanForget:  managed && !active,
+		})
+	}
+	return known, nil
+}
+
+// ForgetKnownNetwork removes one inactive profile after rechecking ownership, role,
+// interface, and active connection state on the server.
+func (backend *NetworkBackend) ForgetKnownNetwork(ctx context.Context, uuid string) error {
+	profile, status, err := backend.knownProfile(ctx, uuid)
+	if err != nil {
+		return err
+	}
+	if profile.UUID == status.Device.ActiveUUID {
+		return NewPublicError(
+			"active_network",
+			"The network currently in use cannot be forgotten. Connect to another network first.",
+		)
+	}
+	if !backend.managesInfrastructureProfile(profile) {
+		return NewPublicError(
+			"network_read_only",
+			"This network profile is managed outside onboardd and cannot be forgotten here.",
+		)
+	}
+	return backend.network.DeleteOwnedInfrastructureProfile(
+		ctx,
+		backend.options.Interface,
+		uuid,
+	)
+}
+
 // Connect applies a protected infrastructure transition and exits temporary captive
 // mode only after durable mode selection succeeds.
 func (backend *NetworkBackend) Connect(ctx context.Context, request ConnectionRequest) error {
@@ -173,6 +234,43 @@ func (backend *NetworkBackend) Connect(ctx context.Context, request ConnectionRe
 			Open:     request.Open,
 			Hidden:   request.Hidden,
 		},
+		Requirement:         backend.options.Requirement,
+		ActivationWait:      backend.options.ActivationWait,
+		RollbackAfter:       backend.options.RollbackAfter,
+		RestorationWait:     backend.options.RestorationWait,
+		PreviousUUID:        previousUUID,
+		PreviousIPv4Address: previousAddress,
+	})
+	if err != nil {
+		return publicTransitionFailure(err)
+	}
+	return backend.exitCaptive(ctx)
+}
+
+// ConnectKnownNetwork activates an existing onboardd-owned infrastructure profile
+// through the same checkpoint and connectivity policy as a newly entered network.
+func (backend *NetworkBackend) ConnectKnownNetwork(ctx context.Context, uuid string) error {
+	profile, status, err := backend.knownProfile(ctx, uuid)
+	if err != nil {
+		return err
+	}
+	if profile.UUID == status.Device.ActiveUUID {
+		return NewPublicError("active_network", "The device is already connected to this network.")
+	}
+	if !backend.managesInfrastructureProfile(profile) {
+		return NewPublicError(
+			"network_read_only",
+			"This network profile is managed outside onboardd and cannot be activated here.",
+		)
+	}
+	previousUUID, previousAddress, err := previousConnection(status)
+	if err != nil {
+		return err
+	}
+	_, err = backend.infrastructure.AttemptSaved(ctx, recovery.SavedInfrastructureOptions{
+		Interface:           backend.options.Interface,
+		UUID:                profile.UUID,
+		SSID:                profile.SSID,
 		Requirement:         backend.options.Requirement,
 		ActivationWait:      backend.options.ActivationWait,
 		RollbackAfter:       backend.options.RollbackAfter,
@@ -218,6 +316,10 @@ func (backend *NetworkBackend) previousConnection(ctx context.Context) (string, 
 			"The device is not ready to change networks. Please try again.",
 		)
 	}
+	return previousConnection(status)
+}
+
+func previousConnection(status networkmanager.Status) (string, netip.Addr, error) {
 	if status.Device.State != networkmanager.DeviceStateActivated || status.Device.ActiveUUID == "" {
 		return "", netip.Addr{}, NewPublicError(
 			"current_connection_unavailable",
@@ -234,6 +336,34 @@ func (backend *NetworkBackend) previousConnection(ctx context.Context) (string, 
 		"current_connection_unavailable",
 		"The device is not ready to change networks. Please try again.",
 	)
+}
+
+func (backend *NetworkBackend) knownProfile(
+	ctx context.Context,
+	uuid string,
+) (networkmanager.Profile, networkmanager.Status, error) {
+	status, err := backend.network.Status(ctx, backend.options.Interface)
+	if err != nil {
+		return networkmanager.Profile{}, networkmanager.Status{}, err
+	}
+	profiles, err := backend.network.Profiles(ctx)
+	if err != nil {
+		return networkmanager.Profile{}, networkmanager.Status{}, err
+	}
+	for _, profile := range profiles {
+		if profile.UUID == uuid {
+			return profile, status, nil
+		}
+	}
+	return networkmanager.Profile{}, networkmanager.Status{}, NewPublicError(
+		"known_network_not_found",
+		"This saved network no longer exists.",
+	)
+}
+
+func (backend *NetworkBackend) managesInfrastructureProfile(profile networkmanager.Profile) bool {
+	return profile.Owned && profile.Role == networkmanager.RoleInfrastructure &&
+		profile.Interface == backend.options.Interface && profile.IsInfrastructureWiFi()
 }
 
 func (backend *NetworkBackend) exitCaptive(ctx context.Context) error {
