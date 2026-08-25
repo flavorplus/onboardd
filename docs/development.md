@@ -79,10 +79,12 @@ The release is written to `dist/v0.1.0/` with `onboardd-linux-arm64`,
 flags and is printed by `onboardd --version`. The script rejects unsafe or ambiguous
 version strings before using one in a linker flag or output path.
 
-Release builds use the local Go toolchain with the user Go environment file, `GOFLAGS`,
-and optional Go experiments disabled; read-only module metadata; no CGO, VCS stamping,
-host paths, or Go build ID; and fixed `GOAMD64=v1` and `GOARM64=v8.0` baselines. Given
-the same source tree, embedded frontend, version, dependencies, and Go toolchain,
+Release builds use the exact supported Go toolchain pinned in `.go-version`. Go's
+toolchain manager downloads it on first use when the installed bootstrap Go supports
+toolchain selection. The user Go environment file, `GOFLAGS`, and optional Go experiments
+are disabled; module metadata is read-only; and builds use no CGO, VCS stamping, host
+paths, or Go build ID, with fixed `GOAMD64=v1` and `GOARM64=v8.0` baselines. Given the
+same source tree, embedded frontend, version, dependencies, and pinned toolchain,
 repeated builds are byte-for-byte identical. To verify that contract without overwriting
 the normal `dist` directory:
 

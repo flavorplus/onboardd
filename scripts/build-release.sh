@@ -33,6 +33,12 @@ fi
 
 script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd -- "${script_directory}/.." && pwd)
+toolchain_version=$(tr -d '[:space:]' <"${repository_root}/.go-version")
+if [[ ! $toolchain_version =~ ^1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  printf 'Invalid Go toolchain version in .go-version: %s\n' "$toolchain_version" >&2
+  exit 2
+fi
+go_toolchain="go${toolchain_version}"
 output_root=${2:-"${repository_root}/dist"}
 if [[ $output_root != /* ]]; then
   output_root="$(pwd -P)/${output_root}"
@@ -83,7 +89,7 @@ build_linux() {
       GOENV=off \
       GOFLAGS= \
       GOEXPERIMENT= \
-      GOTOOLCHAIN=local \
+      GOTOOLCHAIN="$go_toolchain" \
       GOOS=linux \
       GOARCH="$architecture" \
       CGO_ENABLED=0 \
@@ -105,8 +111,8 @@ verify_embedded_version() {
   local host_architecture
   local actual
 
-  host_os=$(env GOENV=off GOFLAGS= GOEXPERIMENT= GOTOOLCHAIN=local go env GOHOSTOS)
-  host_architecture=$(env GOENV=off GOFLAGS= GOEXPERIMENT= GOTOOLCHAIN=local go env GOHOSTARCH)
+  host_os=$(env GOENV=off GOFLAGS= GOEXPERIMENT= GOTOOLCHAIN="$go_toolchain" go env GOHOSTOS)
+  host_architecture=$(env GOENV=off GOFLAGS= GOEXPERIMENT= GOTOOLCHAIN="$go_toolchain" go env GOHOSTARCH)
 
   (
     cd -- "$repository_root"
@@ -114,7 +120,7 @@ verify_embedded_version() {
       GOENV=off \
       GOFLAGS= \
       GOEXPERIMENT= \
-      GOTOOLCHAIN=local \
+      GOTOOLCHAIN="$go_toolchain" \
       GOOS="$host_os" \
       GOARCH="$host_architecture" \
       GOAMD64=v1 \
