@@ -25,6 +25,8 @@ case "$1" in
 esac
 
 if [ -z "$root" ] && [ -d /run/systemd/system ] && \
-   command -v deb-systemd-invoke >/dev/null 2>&1; then
-  deb-systemd-invoke daemon-reload >/dev/null
+   command -v systemctl >/dev/null 2>&1; then
+  # Match postinst and remain compatible with init-system-helpers releases whose
+  # deb-systemd-invoke supports service actions but not daemon-reload.
+  systemctl --system daemon-reload >/dev/null || true
 fi

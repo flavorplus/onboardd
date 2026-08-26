@@ -18,10 +18,12 @@ case "$1" in
     fi
 
     if [ -z "$root" ] && [ -d /run/systemd/system ] && \
-       command -v systemctl >/dev/null 2>&1 && \
-       command -v deb-systemd-invoke >/dev/null 2>&1; then
-      deb-systemd-invoke daemon-reload >/dev/null
-      if systemctl --quiet is-active "$unit"; then
+       command -v systemctl >/dev/null 2>&1; then
+      # Older init-system-helpers releases accept service actions only. Reload
+      # systemd directly so installation also works on those supported hosts.
+      systemctl --system daemon-reload >/dev/null || true
+      if systemctl --quiet is-active "$unit" && \
+         command -v deb-systemd-invoke >/dev/null 2>&1; then
         # During upgrade prerm leaves an active daemon running. Restart only that
         # already-active service; a fresh or intentionally stopped install stays off.
         deb-systemd-invoke restart "$unit" >/dev/null

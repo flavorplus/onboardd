@@ -90,6 +90,7 @@ onboardd package or vendor unit is already installed:
 ```bash
 test ! -e /usr/bin/onboardd
 test ! -e /usr/lib/systemd/system/onboardd.service
+test ! -e /etc/onboardd/config.toml
 ! dpkg-query --show onboardd
 ```
 

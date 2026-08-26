@@ -142,6 +142,17 @@ for architecture in amd64 arm64; do
     assert_equal "mode for DEBIAN/${script}" \
       "$(stat -c '%a' "$control_root/$script")" 755
   done
+  if grep -E \
+    'deb-systemd-invoke[[:space:]]+daemon-(reload|reexec)' \
+    "$control_root/postinst" \
+    "$control_root/postrm" >/dev/null; then
+    fail "unsupported deb-systemd-invoke manager action found for ${architecture}"
+  fi
+  for script in postinst postrm; do
+    if ! grep -F 'systemctl --system daemon-reload' "$control_root/$script" >/dev/null; then
+      fail "${script} does not reload the system manager compatibly for ${architecture}"
+    fi
+  done
 
   cmp "$data_root/usr/bin/onboardd" "$binary"
   cmp \
