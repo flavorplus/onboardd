@@ -62,7 +62,7 @@ func (redirect *NFTRedirect) Install(
 	publicPort uint16,
 	listenerPort uint16,
 ) error {
-	rules, err := RenderNFTRedirect(interfaceName, publicPort, listenerPort)
+	rules, err := renderNFTRedirect(interfaceName, publicPort, listenerPort)
 	if err != nil {
 		return err
 	}
@@ -100,8 +100,8 @@ func (redirect *NFTRedirect) Remove(ctx context.Context) error {
 	return nil
 }
 
-// RenderNFTRedirect returns an isolated nftables ruleset for transparent captive HTTP.
-func RenderNFTRedirect(interfaceName string, publicPort, listenerPort uint16) (string, error) {
+// renderNFTRedirect returns an isolated nftables ruleset for transparent captive HTTP.
+func renderNFTRedirect(interfaceName string, publicPort, listenerPort uint16) (string, error) {
 	if !interfaceNamePattern.MatchString(interfaceName) {
 		return "", errors.New("interface name contains unsupported characters or exceeds 15 bytes")
 	}

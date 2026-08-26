@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	appconfig "github.com/flavorplus/onboardd/internal/config"
-	"github.com/flavorplus/onboardd/internal/handoff"
 )
 
 const logoURL = "/api/v1/branding/logo"
@@ -33,8 +32,8 @@ type brandingResponse struct {
 type Options struct {
 	Branding      Branding
 	Logo          *Logo
-	Handoff       *handoff.Info
-	HealthChecker handoff.ReadinessChecker
+	Handoff       *Handoff
+	HealthChecker readinessChecker
 }
 
 // OptionsFromConfig converts an already resolved and rendered product configuration
@@ -48,16 +47,16 @@ func OptionsFromConfig(config appconfig.Config, hostname string) (Options, error
 		PrimaryColor:    config.Branding.PrimaryColor,
 		BackgroundColor: config.Branding.BackgroundColor,
 	}}
-	handoffInfo, err := handoff.FromConfig(config, hostname)
+	handoffInfo, err := handoffFromConfig(config, hostname)
 	if err != nil {
 		return Options{}, err
 	}
 	options.Handoff = &handoffInfo
-	options.HealthChecker = handoff.NewHealthChecker()
+	options.HealthChecker = newHealthChecker()
 	if config.Branding.Logo == "" {
 		return options, nil
 	}
-	logo, err := LoadLogo(config.Branding.Logo)
+	logo, err := loadLogo(config.Branding.Logo)
 	if err != nil {
 		return Options{}, err
 	}
@@ -65,8 +64,7 @@ func OptionsFromConfig(config appconfig.Config, hostname string) (Options, error
 	return options, nil
 }
 
-// DefaultBranding preserves the product-neutral Phase 4 appearance.
-func DefaultBranding() Branding {
+func defaultBranding() Branding {
 	return Branding{
 		ProductName:     "Device",
 		DeviceName:      "Device",
@@ -79,14 +77,14 @@ func DefaultBranding() Branding {
 
 func resolveAPIOptions(
 	options []Options,
-) (brandingResponse, *Logo, *handoff.Info, handoff.ReadinessChecker, error) {
+) (brandingResponse, *Logo, *Handoff, readinessChecker, error) {
 	if len(options) > 1 {
 		return brandingResponse{}, nil, nil, nil, errors.New("only one setup API options value is allowed")
 	}
-	branding := DefaultBranding()
+	branding := defaultBranding()
 	var logo *Logo
-	var handoffInfo *handoff.Info
-	var healthChecker handoff.ReadinessChecker
+	var handoffInfo *Handoff
+	var healthChecker readinessChecker
 	if len(options) == 1 {
 		branding = options[0].Branding
 		logo = options[0].Logo
@@ -108,7 +106,7 @@ func resolveAPIOptions(
 		response.LogoURL = logoURL
 	}
 	if handoffInfo != nil && handoffInfo.HealthCheckURL != "" && healthChecker == nil {
-		healthChecker = handoff.NewHealthChecker()
+		healthChecker = newHealthChecker()
 	}
 	return response, logo, handoffInfo, healthChecker, nil
 }

@@ -1,4 +1,4 @@
-# Phase 5 acceptance fixture. The SVG is a generic test mark, not an InkyPi trademark.
+# Example configuration for an InkyPi display.
 schema_version = 1
 
 [product]
@@ -6,7 +6,6 @@ name = "InkyPi"
 device_name = "Kitchen display"
 
 [branding]
-logo = "/etc/onboardd/inkypi-acceptance.svg"
 primary_color = "#2455cd"
 background_color = "#eff3f8"
 
@@ -31,3 +30,9 @@ address = "10.42.0.1/24"
 
 [portal]
 listener_port = 18080
+
+[handoff]
+application_label = "Open InkyPi"
+application_url = "http://{{ .Hostname }}.local/"
+health_check_url = "http://127.0.0.1/"
+show_standalone_credentials = false

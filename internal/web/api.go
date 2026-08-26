@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/flavorplus/onboardd/internal/handoff"
 	"github.com/flavorplus/onboardd/internal/setup"
 )
 
@@ -43,8 +42,8 @@ type API struct {
 	canonicalOrigin string
 	csrfToken       string
 	branding        brandingResponse
-	handoff         *handoff.Info
-	healthChecker   handoff.ReadinessChecker
+	handoff         *Handoff
+	healthChecker   readinessChecker
 	logo            *Logo
 	mux             *http.ServeMux
 }
@@ -148,8 +147,8 @@ func (api *API) getSetup(response http.ResponseWriter, request *http.Request) {
 
 func browserHandoff(
 	ctx context.Context,
-	info *handoff.Info,
-	checker handoff.ReadinessChecker,
+	info *Handoff,
+	checker readinessChecker,
 ) *handoffResponse {
 	if info == nil {
 		return nil

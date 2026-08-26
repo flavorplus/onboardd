@@ -13,7 +13,7 @@ import (
 )
 
 type networkManager interface {
-	CreateCheckpoint(context.Context, string, time.Duration) (networkmanager.Checkpoint, error)
+	CreateCheckpoint(context.Context, string, time.Duration) (string, error)
 	ConnectInfrastructure(context.Context, networkmanager.InfrastructureOptions) (networkmanager.Activation, error)
 	ActivateProfile(context.Context, string, string) (networkmanager.Activation, error)
 	WaitForActivation(context.Context, string, string, time.Duration) error
@@ -21,7 +21,7 @@ type networkManager interface {
 	CheckConnectivity(context.Context) (networkmanager.Connectivity, error)
 	FinalizeTransition(context.Context, string, networkmanager.Role, string, string) error
 	CommitCheckpoint(context.Context, string) error
-	RollbackCheckpoint(context.Context, string) (networkmanager.RollbackResult, error)
+	RollbackCheckpoint(context.Context, string) error
 	DeleteOwnedProfile(context.Context, string) error
 }
 
@@ -146,24 +146,24 @@ func (transition *Infrastructure) attempt(
 
 	activation, err := activate(ctx)
 	if err != nil {
-		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, fmt.Errorf("activate infrastructure profile: %w", err))
+		return networkmanager.Activation{}, transition.rollback(options, checkpoint, activation.UUID, fmt.Errorf("activate infrastructure profile: %w", err))
 	}
 	if err := transition.network.WaitForActivation(ctx, activation.ActivePath, options.Interface, options.ActivationWait); err != nil {
-		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, fmt.Errorf("wait for candidate infrastructure profile: %w", err))
+		return networkmanager.Activation{}, transition.rollback(options, checkpoint, activation.UUID, fmt.Errorf("wait for candidate infrastructure profile: %w", err))
 	}
 
 	status, err := transition.network.Status(ctx, options.Interface)
 	if err != nil {
-		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, fmt.Errorf("inspect candidate connectivity: %w", err))
+		return networkmanager.Activation{}, transition.rollback(options, checkpoint, activation.UUID, fmt.Errorf("inspect candidate connectivity: %w", err))
 	}
 	if status.Device.ActiveUUID != activation.UUID {
 		err = fmt.Errorf("candidate profile %s is not active", activation.UUID)
-		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, err)
+		return networkmanager.Activation{}, transition.rollback(options, checkpoint, activation.UUID, err)
 	}
 	if options.Requirement == connectivity.RequirementInternet {
 		status.Connectivity, err = transition.network.CheckConnectivity(ctx)
 		if err != nil {
-			return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, err)
+			return networkmanager.Activation{}, transition.rollback(options, checkpoint, activation.UUID, err)
 		}
 	}
 	result := connectivity.Evaluate(options.Requirement, connectivity.Observation{
@@ -173,7 +173,7 @@ func (transition *Infrastructure) attempt(
 	})
 	if !result.Accepted {
 		err = fmt.Errorf("candidate does not satisfy %s requirement: %s", options.Requirement, result.Reason)
-		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, err)
+		return networkmanager.Activation{}, transition.rollback(options, checkpoint, activation.UUID, err)
 	}
 
 	if err := transition.network.FinalizeTransition(
@@ -183,10 +183,10 @@ func (transition *Infrastructure) attempt(
 		options.SSID,
 		activation.UUID,
 	); err != nil {
-		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, fmt.Errorf("select infrastructure mode: %w", err))
+		return networkmanager.Activation{}, transition.rollback(options, checkpoint, activation.UUID, fmt.Errorf("select infrastructure mode: %w", err))
 	}
-	if err := transition.network.CommitCheckpoint(ctx, checkpoint.Path); err != nil {
-		return networkmanager.Activation{}, transition.rollback(options, checkpoint.Path, activation.UUID, fmt.Errorf("commit infrastructure transition: %w", err))
+	if err := transition.network.CommitCheckpoint(ctx, checkpoint); err != nil {
+		return networkmanager.Activation{}, transition.rollback(options, checkpoint, activation.UUID, fmt.Errorf("commit infrastructure transition: %w", err))
 	}
 	return activation, nil
 }
@@ -199,7 +199,7 @@ func (transition *Infrastructure) rollback(
 ) error {
 	cleanupContext, cancel := context.WithTimeout(context.Background(), options.RestorationWait)
 	defer cancel()
-	if _, err := transition.network.RollbackCheckpoint(cleanupContext, checkpointPath); err != nil {
+	if err := transition.network.RollbackCheckpoint(cleanupContext, checkpointPath); err != nil {
 		return errors.Join(cause, fmt.Errorf("rollback NetworkManager checkpoint: %w", err))
 	}
 

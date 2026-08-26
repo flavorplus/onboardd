@@ -3,18 +3,18 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"strings"
 
-	"github.com/flavorplus/onboardd/internal/buildinfo"
 	"github.com/flavorplus/onboardd/internal/networkmanager"
+	"github.com/flavorplus/onboardd/internal/recovery"
 )
 
-const defaultInterface = "wlan0"
+// Version is replaced through -ldflags for release builds.
+var Version = "development"
 
 // Run executes the onboardd command line.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -22,18 +22,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		printRootHelp(stdout)
 		return nil
 	}
-	if args[0] == "debug" {
-		return runDebug(ctx, args[1:], stdout, stderr)
-	}
 	if args[0] == "run" {
 		err := runAppliance(ctx, args[1:], stdout, stderr)
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return err
-	}
-	if args[0] == "setup" {
-		err := runSetup(ctx, args[1:], stdout, stderr)
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
@@ -54,7 +44,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if *showVersion {
-		fmt.Fprintf(stdout, "onboardd %s\n", buildinfo.Version)
+		fmt.Fprintf(stdout, "onboardd %s\n", Version)
 		return nil
 	}
 	if root.NArg() > 0 && root.Arg(0) == "help" {
@@ -72,12 +62,6 @@ func openClient() (*networkmanager.Client, error) {
 	return client, nil
 }
 
-func writeJSON(writer io.Writer, value any) error {
-	encoder := json.NewEncoder(writer)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(value)
-}
-
 func requireNoArgs(flags *flag.FlagSet) error {
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
@@ -91,41 +75,30 @@ func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {
 	return flags
 }
 
-func emptyAsDash(value string) string {
-	if value == "" {
-		return "-"
-	}
-	return value
-}
-
 func printRootHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "onboardd - headless appliance network onboarding")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Usage:")
 	fmt.Fprintln(writer, "  onboardd --version")
 	fmt.Fprintln(writer, "  onboardd run [--config /etc/onboardd/config.toml] [operational overrides]")
-	fmt.Fprintln(writer, "  onboardd setup [--config /etc/onboardd/config.toml] [operational overrides]")
 	fmt.Fprintln(writer, "  onboardd recover")
-	fmt.Fprintln(writer, "  onboardd debug <command> [options]")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "The run command reconciles network state and opens recovery setup when needed.")
 	fmt.Fprintln(writer, "The recover command asks a running appliance to enter manual recovery.")
-	fmt.Fprintln(writer, "The setup command runs the portal directly when the appliance is stopped.")
-	fmt.Fprintln(writer, "Both load TOML, environment variables, and operational CLI overrides.")
-	fmt.Fprintln(writer)
-	fmt.Fprintln(writer, "Run 'onboardd debug help' for NetworkManager and reconciliation diagnostics.")
+	fmt.Fprintln(writer, "The run command loads TOML and operational CLI overrides.")
 }
 
-func printDebugHelp(writer io.Writer) {
-	fmt.Fprintln(writer, "NetworkManager and reconciliation diagnostics")
-	fmt.Fprintln(writer)
-	fmt.Fprintln(writer, "  onboardd debug config [--config FILE] [--render] [operational overrides]")
-	fmt.Fprintln(writer, "  onboardd debug status [--interface wlan0] [--json]")
-	fmt.Fprintln(writer, "  onboardd debug profiles [--owned] [--json]")
-	fmt.Fprintln(writer, "  onboardd debug profile-delete --uuid UUID --yes")
-	fmt.Fprintln(writer, "  onboardd debug scan [--interface wlan0] [--wait 5s] [--json]")
-	fmt.Fprintln(writer, "  onboardd debug watch [--json]")
-	fmt.Fprintln(writer, "  onboardd debug reconcile [--requirement local|internet] [--watch] [--json]")
-	fmt.Fprintln(writer)
-	fmt.Fprintln(writer, "Network changes belong to the configured 'onboardd setup' workflow.")
+func runRecover(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("recover", stderr)
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(flags); err != nil {
+		return err
+	}
+	if err := recovery.RequestControl(ctx, recovery.ControlSocketPath); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "manual recovery requested")
+	return nil
 }

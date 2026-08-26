@@ -1,14 +1,13 @@
-import "./styles.css";
-
 import * as QRCode from "qrcode";
 
 import { APIError, SetupAPI } from "./api.ts";
-import { needsBrowserHandoff, wifiQRPayload } from "./handoff.ts";
 import {
   brandingPalette,
   initialView,
   modeLabel,
+  needsBrowserHandoff,
   strengthLabel,
+  wifiQRPayload,
   type Bootstrap,
   type KnownNetwork,
   type Network,

@@ -8,15 +8,12 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/flavorplus/onboardd/internal/appliance"
 	"github.com/flavorplus/onboardd/internal/captive"
-	appconfig "github.com/flavorplus/onboardd/internal/config"
 	"github.com/flavorplus/onboardd/internal/discovery"
-	"github.com/flavorplus/onboardd/internal/networkmanager"
 	"github.com/flavorplus/onboardd/internal/observability"
 	"github.com/flavorplus/onboardd/internal/recovery"
 	setupflow "github.com/flavorplus/onboardd/internal/setup"
@@ -29,50 +26,10 @@ const (
 	applianceCleanupTimeout = 15 * time.Second
 	runtimeMaxRestarts      = 3
 	runtimeRestartDelay     = 2 * time.Second
-	recoveryButtonHold      = 3 * time.Second
-	recoveryButtonDebounce  = 50 * time.Millisecond
 )
 
 func runAppliance(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	defaults := appconfig.Defaults()
-	flags := newFlagSet("run", stderr)
-	configPath := flags.String("config", appconfig.SystemPath, "TOML configuration file")
-	operational := bindOperationalConfigFlags(flags, defaults)
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	if err := requireNoArgs(flags); err != nil {
-		return err
-	}
-
-	set := explicitlySetFlags(flags)
-	overrides, err := operational.overrides(flags)
-	if err != nil {
-		return err
-	}
-	resolved, err := appconfig.Resolve(appconfig.ResolveOptions{
-		ConfigPath:     *configPath,
-		ConfigOptional: !set["config"],
-		Environment:    os.Environ(),
-		Overrides:      overrides,
-	})
-	if err != nil {
-		return err
-	}
-	hostname, err := discovery.CurrentHostname(ctx)
-	if err != nil {
-		return fmt.Errorf("discover host mDNS name: %w", err)
-	}
-	identity, err := appconfig.LoadIdentity()
-	if err != nil {
-		return err
-	}
-	identity.Hostname = hostname
-	resolved, err = appconfig.RenderTemplates(resolved, identity)
-	if err != nil {
-		return err
-	}
-	options, err := configuredSetupOptions(resolved, hostname)
+	options, err := loadSetupOptions(ctx, "run", args, stderr)
 	if err != nil {
 		return err
 	}
@@ -86,12 +43,12 @@ func runAppliance(ctx context.Context, args []string, stdout, stderr io.Writer) 
 
 func runManagedAppliance(
 	ctx context.Context,
-	options interactiveSetupOptions,
+	options setupOptions,
 	stdout io.Writer,
 	lifecycle *observability.Lifecycle,
 	serviceNotifier *systemd.Notifier,
 ) (result error) {
-	if err := validateManagedApplianceOptions(options); err != nil {
+	if err := validateSetupOptions(options); err != nil {
 		return err
 	}
 	if lifecycle == nil {
@@ -162,7 +119,7 @@ func runManagedAppliance(
 		return err
 	}
 
-	backend, err := newManagedNetworkBackend(client, captiveManager, options)
+	backend, err := newNetworkBackend(client, captiveManager, options)
 	if err != nil {
 		return err
 	}
@@ -335,43 +292,10 @@ func runManagedAppliance(
 		controlDone <- controlServer.Run(runtimeContext)
 	}()
 
-	var recoveryButton *recovery.Button
-	if options.RecoveryGPIO.Enabled {
-		recoveryButton, err = recovery.StartButton(recoveryRequests, recovery.ButtonOptions{
-			ChipPath: options.RecoveryGPIO.Chip,
-			Line:     options.RecoveryGPIO.Line,
-			Hold:     recoveryButtonHold,
-			Debounce: recoveryButtonDebounce,
-		})
-		if err != nil {
-			cancelRuntime()
-			controlErr := <-controlDone
-			listenerErr := <-listenerDone
-			operationErr := stopOperations()
-			return errors.Join(
-				fmt.Errorf("start gpio recovery button: %w", err),
-				controlErr,
-				listenerErr,
-				operationErr,
-				stopManagedResources(runtimeContext, captiveManager, publisher),
-			)
-		}
-	}
-
 	fmt.Fprintf(stdout, "%s is running\n", options.ReadyLabel)
 	fmt.Fprintf(stdout, "Setup: %s\n", options.Branding.Handoff.SetupURL)
 	fmt.Fprintf(stdout, "Recovery SSID: %s\n", options.ProvisioningSSID)
 	fmt.Fprintln(stdout, "Manual recovery: sudo onboardd recover")
-	if options.RecoveryGPIO.Enabled {
-		fmt.Fprintf(
-			stdout,
-			"GPIO recovery: hold line %d on %s for %s\n",
-			options.RecoveryGPIO.Line,
-			options.RecoveryGPIO.Chip,
-			recoveryButtonHold,
-		)
-	}
-	fmt.Fprintln(stdout, "Network mode is managed automatically. Press Ctrl+C to stop.")
 	failure = observability.FailureOperational
 
 	type componentResult struct {
@@ -380,7 +304,7 @@ func runManagedAppliance(
 		err       error
 	}
 	componentCount := 3
-	componentResults := make(chan componentResult, 5)
+	componentResults := make(chan componentResult, 4)
 	go func() {
 		componentResults <- componentResult{
 			name:      "appliance controller",
@@ -402,16 +326,6 @@ func runManagedAppliance(
 			err:       <-controlDone,
 		}
 	}()
-	if recoveryButton != nil {
-		componentCount++
-		go func() {
-			componentResults <- componentResult{
-				name:      "gpio recovery button",
-				component: observability.ComponentGPIO,
-				err:       recoveryButton.Run(runtimeContext),
-			}
-		}()
-	}
 	if serviceNotifier != nil && serviceNotifier.Enabled() {
 		componentCount++
 		go func() {
@@ -455,76 +369,6 @@ func runManagedAppliance(
 	}
 	fmt.Fprintln(stdout, "Onboardd appliance stopped and temporary resources were removed")
 	return nil
-}
-
-func validateManagedApplianceOptions(options interactiveSetupOptions) error {
-	if _, _, err := networkmanager.BuildAccessPointSettings(networkmanager.AccessPointOptions{
-		Interface: options.Interface,
-		SSID:      options.ProvisioningSSID,
-		Password:  options.ProvisioningPSK,
-		Address:   options.ProvisioningAddress.String(),
-		Role:      networkmanager.RoleProvisioning,
-		Band:      options.Band,
-	}); err != nil {
-		return fmt.Errorf("invalid provisioning network: %w", err)
-	}
-	if options.StandaloneEnabled {
-		if _, _, err := networkmanager.BuildAccessPointSettings(networkmanager.AccessPointOptions{
-			Interface: options.Interface,
-			SSID:      options.StandaloneSSID,
-			Password:  options.StandalonePSK,
-			Address:   options.StandaloneAddress,
-			Role:      networkmanager.RoleStandalone,
-			Priority:  999,
-			Band:      options.Band,
-		}); err != nil {
-			return fmt.Errorf("invalid standalone network: %w", err)
-		}
-	}
-	if _, err := fs.Stat(options.Assets, "index.html"); err != nil {
-		return fmt.Errorf("frontend assets: %w", err)
-	}
-	if options.Branding.Handoff == nil {
-		return errors.New("resolved handoff configuration is required")
-	}
-	return nil
-}
-
-func newManagedNetworkBackend(
-	client *networkmanager.Client,
-	captiveManager *captive.Manager,
-	options interactiveSetupOptions,
-) (*setupflow.NetworkBackend, error) {
-	infrastructureTransition, err := recovery.NewInfrastructure(client)
-	if err != nil {
-		return nil, err
-	}
-	standaloneTransition, err := recovery.NewStandalone(client)
-	if err != nil {
-		return nil, err
-	}
-	return setupflow.NewNetworkBackend(
-		client,
-		infrastructureTransition,
-		standaloneTransition,
-		captiveManager,
-		setupflow.NetworkOptions{
-			Interface:         options.Interface,
-			Requirement:       options.Requirement,
-			ScanWait:          options.ScanWait,
-			ActivationWait:    options.ActivationWait,
-			RollbackAfter:     options.RollbackAfter,
-			RestorationWait:   options.RestorationWait,
-			StandaloneEnabled: options.StandaloneEnabled,
-			Standalone: networkmanager.AccessPointOptions{
-				SSID:     options.StandaloneSSID,
-				Password: options.StandalonePSK,
-				Address:  options.StandaloneAddress,
-				Band:     options.Band,
-				Priority: 999,
-			},
-		},
-	)
 }
 
 func stopManagedResources(

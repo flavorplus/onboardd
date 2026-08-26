@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -42,7 +41,6 @@ type Config struct {
 	Network       Network  `toml:"network"`
 	Portal        Portal   `toml:"portal"`
 	Handoff       Handoff  `toml:"handoff"`
-	Recovery      Recovery `toml:"recovery"`
 }
 
 type Product struct {
@@ -86,18 +84,6 @@ type Portal struct {
 	ListenerPort uint16 `toml:"listener_port"`
 }
 
-// Recovery configures optional physical recovery inputs. Manual recovery over
-// the local control socket is always available while `onboardd run` is active.
-type Recovery struct {
-	GPIO RecoveryGPIO `toml:"gpio"`
-}
-
-type RecoveryGPIO struct {
-	Enabled bool   `toml:"enabled"`
-	Chip    string `toml:"chip"`
-	Line    uint32 `toml:"line"`
-}
-
 // Handoff configures the optional product application destination. The stable setup
 // hostname is read from the host's Avahi daemon and is deliberately not configurable.
 type Handoff struct {
@@ -105,6 +91,67 @@ type Handoff struct {
 	ApplicationURL            string `toml:"application_url"`
 	HealthCheckURL            string `toml:"health_check_url"`
 	ShowStandaloneCredentials bool   `toml:"show_standalone_credentials"`
+}
+
+// ResolveOptions describes the ordered configuration sources.
+type ResolveOptions struct {
+	ConfigPath     string
+	ConfigOptional bool
+	Overrides      Overrides
+}
+
+// Overrides are the small operational subset exposed by the production CLI.
+type Overrides struct {
+	NetworkInterface      *string
+	NetworkRequirement    *connectivity.Requirement
+	InfrastructureEnabled *bool
+	StandaloneEnabled     *bool
+	ListenerPort          *uint16
+}
+
+// Resolve applies defaults, TOML, and CLI overrides in that order, then validates
+// the final result exactly once.
+func Resolve(options ResolveOptions) (Config, error) {
+	resolved := Defaults()
+	if options.ConfigPath != "" {
+		file, err := os.Open(options.ConfigPath)
+		if err != nil {
+			if !options.ConfigOptional || !errors.Is(err, os.ErrNotExist) {
+				return Config{}, fmt.Errorf("open configuration %q: %w", options.ConfigPath, err)
+			}
+		} else {
+			defer file.Close()
+			if err := decodeInto(file, &resolved); err != nil {
+				return Config{}, fmt.Errorf("load configuration %q: %w", options.ConfigPath, err)
+			}
+		}
+	}
+	applyOverrides(&resolved, options.Overrides)
+	if err := resolved.Validate(); err != nil {
+		if options.ConfigPath != "" {
+			return Config{}, fmt.Errorf("validate configuration %q: %w", options.ConfigPath, err)
+		}
+		return Config{}, err
+	}
+	return resolved, nil
+}
+
+func applyOverrides(config *Config, overrides Overrides) {
+	if overrides.NetworkInterface != nil {
+		config.Network.Interface = *overrides.NetworkInterface
+	}
+	if overrides.NetworkRequirement != nil {
+		config.Network.Requirement = *overrides.NetworkRequirement
+	}
+	if overrides.InfrastructureEnabled != nil {
+		config.Network.InfrastructureEnabled = *overrides.InfrastructureEnabled
+	}
+	if overrides.StandaloneEnabled != nil {
+		config.Network.StandaloneEnabled = *overrides.StandaloneEnabled
+	}
+	if overrides.ListenerPort != nil {
+		config.Portal.ListenerPort = *overrides.ListenerPort
+	}
 }
 
 // Defaults returns the safe product-neutral values used before later sources overlay
@@ -141,38 +188,7 @@ func Defaults() Config {
 		},
 		Portal:  Portal{ListenerPort: 18080},
 		Handoff: Handoff{},
-		Recovery: Recovery{GPIO: RecoveryGPIO{
-			Chip: "/dev/gpiochip0",
-			Line: 17,
-		}},
 	}
-}
-
-// LoadFile overlays a TOML file on the built-in defaults and validates the result.
-func LoadFile(path string) (Config, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return Config{}, fmt.Errorf("open configuration %q: %w", path, err)
-	}
-	defer file.Close()
-
-	loaded, err := Decode(file)
-	if err != nil {
-		return Config{}, fmt.Errorf("load configuration %q: %w", path, err)
-	}
-	return loaded, nil
-}
-
-// Decode overlays one TOML document on the built-in defaults and validates it.
-func Decode(reader io.Reader) (Config, error) {
-	resolved := Defaults()
-	if err := decodeInto(reader, &resolved); err != nil {
-		return Config{}, err
-	}
-	if err := resolved.Validate(); err != nil {
-		return Config{}, err
-	}
-	return resolved, nil
 }
 
 func decodeInto(reader io.Reader, resolved *Config) error {
@@ -213,9 +229,6 @@ func (config Config) Validate() error {
 		return err
 	}
 	if err := validatePortal(config.Portal); err != nil {
-		return err
-	}
-	if err := validateRecovery(config.Recovery); err != nil {
 		return err
 	}
 	return validateHandoff(config.Handoff, false)
@@ -287,13 +300,6 @@ func validatePortal(portal Portal) error {
 	}
 	if portal.ListenerPort == CaptivePublicPort {
 		return fmt.Errorf("portal.listener_port must differ from the fixed captive public port %d", CaptivePublicPort)
-	}
-	return nil
-}
-
-func validateRecovery(recovery Recovery) error {
-	if !filepath.IsAbs(recovery.GPIO.Chip) {
-		return errors.New("recovery.gpio.chip must be an absolute device path")
 	}
 	return nil
 }

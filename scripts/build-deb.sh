@@ -83,7 +83,7 @@ build_package() {
 
   install -m 0755 "$binary" "${package_root}/usr/bin/onboardd"
   install -m 0644 \
-    "${repository_root}/packaging/systemd/onboardd.service" \
+    "${packaging_directory}/onboardd.service" \
     "${package_root}/usr/lib/systemd/system/onboardd.service"
   install -m 0640 \
     "${packaging_directory}/config.toml" \

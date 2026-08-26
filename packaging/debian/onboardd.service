@@ -16,8 +16,8 @@ WatchdogSec=30s
 TimeoutStartSec=90s
 TimeoutStopSec=90s
 
-# onboardd must run as root for NetworkManager policy, nftables, the private
-# recovery socket, and optional GPIO access. Keep its remaining authority narrow.
+# onboardd must run as root for NetworkManager policy, nftables, and the private
+# recovery socket. Keep its remaining authority narrow.
 User=root
 Group=root
 UMask=0077
@@ -32,6 +32,7 @@ ProtectSystem=strict
 ReadWritePaths=/etc/NetworkManager/dnsmasq-shared.d
 ProtectHome=yes
 PrivateTmp=yes
+PrivateDevices=yes
 
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
@@ -46,9 +47,6 @@ RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 SystemCallArchitectures=native
-
-# PrivateDevices is intentionally not enabled: products may opt into a configured
-# /dev/gpiochip recovery input.
 
 [Install]
 WantedBy=multi-user.target

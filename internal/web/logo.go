@@ -23,8 +23,8 @@ type Logo struct {
 	contentType string
 }
 
-// LoadLogo validates a configured raster or SVG logo before any network transition.
-func LoadLogo(path string) (*Logo, error) {
+// loadLogo validates a configured raster or SVG logo before any network transition.
+func loadLogo(path string) (*Logo, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open branding logo %q: %w", path, err)

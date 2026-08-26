@@ -1,12 +1,25 @@
 package web
 
 import (
+	"embed"
 	"errors"
 	"io/fs"
 	"net/http"
 	"path"
 	"strings"
 )
+
+//go:embed dist
+var compiledFrontend embed.FS
+
+// Assets returns the compiled frontend rooted at index.html.
+func Assets() fs.FS {
+	assets, err := fs.Sub(compiledFrontend, "dist")
+	if err != nil {
+		panic(err)
+	}
+	return assets
+}
 
 const contentSecurityPolicy = "default-src 'self'; base-uri 'none'; form-action 'self'; " +
 	"frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'; " +

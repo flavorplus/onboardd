@@ -8,23 +8,23 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-func TestProfilePersistence(t *testing.T) {
+func TestProfileInMemory(t *testing.T) {
 	tests := []struct {
 		name     string
 		filename string
-		want     string
+		want     bool
 	}{
-		{name: "no backing file", want: "memory"},
-		{name: "runtime file", filename: "/run/NetworkManager/system-connections/test.nmconnection", want: "memory"},
-		{name: "legacy runtime file", filename: "/var/run/NetworkManager/system-connections/test.nmconnection", want: "memory"},
-		{name: "system file", filename: "/etc/NetworkManager/system-connections/test.nmconnection", want: "disk"},
-		{name: "vendor file", filename: "/usr/lib/NetworkManager/system-connections/test.nmconnection", want: "disk"},
+		{name: "no backing file", want: true},
+		{name: "runtime file", filename: "/run/NetworkManager/system-connections/test.nmconnection", want: true},
+		{name: "legacy runtime file", filename: "/var/run/NetworkManager/system-connections/test.nmconnection", want: true},
+		{name: "system file", filename: "/etc/NetworkManager/system-connections/test.nmconnection"},
+		{name: "vendor file", filename: "/usr/lib/NetworkManager/system-connections/test.nmconnection"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := profilePersistence(test.filename); got != test.want {
-				t.Fatalf("profilePersistence(%q) = %q, want %q", test.filename, got, test.want)
+			if got := profileInMemory(test.filename); got != test.want {
+				t.Fatalf("profileInMemory(%q) = %t, want %t", test.filename, got, test.want)
 			}
 		})
 	}

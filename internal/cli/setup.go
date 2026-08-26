@@ -3,23 +3,20 @@ package cli
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"net"
-	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/flavorplus/onboardd/internal/captive"
 	appconfig "github.com/flavorplus/onboardd/internal/config"
 	"github.com/flavorplus/onboardd/internal/connectivity"
 	"github.com/flavorplus/onboardd/internal/discovery"
-	embeddedfrontend "github.com/flavorplus/onboardd/internal/frontend"
 	"github.com/flavorplus/onboardd/internal/networkmanager"
 	"github.com/flavorplus/onboardd/internal/recovery"
 	setupflow "github.com/flavorplus/onboardd/internal/setup"
@@ -31,66 +28,142 @@ const (
 	defaultDNSConfigPath = "/etc/NetworkManager/dnsmasq-shared.d/onboardd.conf"
 )
 
-func runSetup(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+// operationalConfigFlags is the deliberately small override surface. Product
+// identity, branding, SSIDs, and secrets stay out of process arguments.
+type operationalConfigFlags struct {
+	interfaceName        *string
+	requirementText      *string
+	infrastructureEnable *bool
+	standaloneEnable     *bool
+	listenerPort         *uint
+}
+
+func bindOperationalConfigFlags(flags *flag.FlagSet, defaults appconfig.Config) operationalConfigFlags {
+	return operationalConfigFlags{
+		interfaceName: flags.String(
+			"network-interface", defaults.Network.Interface,
+			"NetworkManager Wi-Fi interface override",
+		),
+		requirementText: flags.String(
+			"network-requirement", string(defaults.Network.Requirement),
+			"connectivity requirement override: local or internet",
+		),
+		infrastructureEnable: flags.Bool(
+			"infrastructure-enabled", defaults.Network.InfrastructureEnabled,
+			"infrastructure-mode policy override",
+		),
+		standaloneEnable: flags.Bool(
+			"standalone-enabled", defaults.Network.StandaloneEnabled,
+			"standalone-mode policy override",
+		),
+		listenerPort: flags.Uint(
+			"listener-port", uint(defaults.Portal.ListenerPort),
+			"private portal listener port override",
+		),
+	}
+}
+
+func resolveConfig(
+	flags *flag.FlagSet,
+	configPath string,
+	values operationalConfigFlags,
+) (appconfig.Config, error) {
+	set := explicitlySetFlags(flags)
+	overrides, err := values.overrides(set)
+	if err != nil {
+		return appconfig.Config{}, err
+	}
+	return appconfig.Resolve(appconfig.ResolveOptions{
+		ConfigPath:     configPath,
+		ConfigOptional: !set["config"],
+		Overrides:      overrides,
+	})
+}
+
+func (values operationalConfigFlags) overrides(set map[string]bool) (appconfig.Overrides, error) {
+	overrides := appconfig.Overrides{}
+	if set["network-interface"] {
+		overrides.NetworkInterface = values.interfaceName
+	}
+	if set["network-requirement"] {
+		requirement := connectivity.Requirement(*values.requirementText)
+		overrides.NetworkRequirement = &requirement
+	}
+	if set["infrastructure-enabled"] {
+		overrides.InfrastructureEnabled = values.infrastructureEnable
+	}
+	if set["standalone-enabled"] {
+		overrides.StandaloneEnabled = values.standaloneEnable
+	}
+	if set["listener-port"] {
+		if *values.listenerPort == 0 || *values.listenerPort > 65535 {
+			return appconfig.Overrides{}, errors.New("--listener-port must be between 1 and 65535")
+		}
+		port := uint16(*values.listenerPort)
+		overrides.ListenerPort = &port
+	}
+	return overrides, nil
+}
+
+func explicitlySetFlags(flags *flag.FlagSet) map[string]bool {
+	set := make(map[string]bool)
+	flags.Visit(func(flag *flag.Flag) {
+		set[flag.Name] = true
+	})
+	return set
+}
+
+func loadSetupOptions(
+	ctx context.Context,
+	command string,
+	args []string,
+	stderr io.Writer,
+) (setupOptions, error) {
 	defaults := appconfig.Defaults()
-	flags := newFlagSet("setup", stderr)
+	flags := newFlagSet(command, stderr)
 	configPath := flags.String("config", appconfig.SystemPath, "TOML configuration file")
 	operational := bindOperationalConfigFlags(flags, defaults)
 	if err := flags.Parse(args); err != nil {
-		return err
+		return setupOptions{}, err
 	}
 	if err := requireNoArgs(flags); err != nil {
-		return err
+		return setupOptions{}, err
 	}
 
-	set := explicitlySetFlags(flags)
-	overrides, err := operational.overrides(flags)
+	resolved, err := resolveConfig(flags, *configPath, operational)
 	if err != nil {
-		return err
-	}
-	resolved, err := appconfig.Resolve(appconfig.ResolveOptions{
-		ConfigPath:     *configPath,
-		ConfigOptional: !set["config"],
-		Environment:    os.Environ(),
-		Overrides:      overrides,
-	})
-	if err != nil {
-		return err
+		return setupOptions{}, err
 	}
 	avahiHostname, err := discovery.CurrentHostname(ctx)
 	if err != nil {
-		return fmt.Errorf("discover host mDNS name: %w", err)
+		return setupOptions{}, fmt.Errorf("discover host mDNS name: %w", err)
 	}
 	identity, err := appconfig.LoadIdentity()
 	if err != nil {
-		return err
+		return setupOptions{}, err
 	}
 	identity.Hostname = avahiHostname
 	resolved, err = appconfig.RenderTemplates(resolved, identity)
 	if err != nil {
-		return err
+		return setupOptions{}, err
 	}
-	options, err := configuredSetupOptions(resolved, avahiHostname)
-	if err != nil {
-		return err
-	}
-	return runInteractiveSetup(ctx, options, stdout)
+	return setupOptionsFromConfig(resolved, avahiHostname)
 }
 
-func configuredSetupOptions(resolved appconfig.Config, hostname string) (interactiveSetupOptions, error) {
+func setupOptionsFromConfig(resolved appconfig.Config, hostname string) (setupOptions, error) {
 	branding, err := webui.OptionsFromConfig(resolved, hostname)
 	if err != nil {
-		return interactiveSetupOptions{}, err
+		return setupOptions{}, err
 	}
 	portalPassword, err := readSecurePasswordFile(resolved.Network.Provisioning.PasswordFile)
 	if err != nil {
-		return interactiveSetupOptions{}, fmt.Errorf("provisioning password: %w", err)
+		return setupOptions{}, fmt.Errorf("provisioning password: %w", err)
 	}
 	standalonePassword := ""
 	if resolved.Network.StandaloneEnabled {
 		standalonePassword, err = readSecurePasswordFile(resolved.Network.Standalone.PasswordFile)
 		if err != nil {
-			return interactiveSetupOptions{}, fmt.Errorf("standalone password: %w", err)
+			return setupOptions{}, fmt.Errorf("standalone password: %w", err)
 		}
 		if branding.Handoff != nil && branding.Handoff.Standalone != nil &&
 			branding.Handoff.ShowStandaloneCredentials {
@@ -99,15 +172,15 @@ func configuredSetupOptions(resolved appconfig.Config, hostname string) (interac
 	}
 	address, err := netip.ParsePrefix(appconfig.ProvisioningAddress)
 	if err != nil {
-		return interactiveSetupOptions{}, fmt.Errorf("invalid built-in provisioning address: %w", err)
+		return setupOptions{}, fmt.Errorf("invalid built-in provisioning address: %w", err)
 	}
 	canonicalURL := portalURLFor(address, appconfig.CaptivePublicPort)
 	origin, err := portalOrigin(canonicalURL)
 	if err != nil {
-		return interactiveSetupOptions{}, err
+		return setupOptions{}, err
 	}
 
-	return interactiveSetupOptions{
+	return setupOptions{
 		Interface:           resolved.Network.Interface,
 		ProvisioningSSID:    resolved.Network.Provisioning.SSID,
 		ProvisioningPSK:     portalPassword,
@@ -118,7 +191,7 @@ func configuredSetupOptions(resolved appconfig.Config, hostname string) (interac
 		PortalURL:           canonicalURL,
 		PortalOrigin:        origin,
 		DNSConfigPath:       defaultDNSConfigPath,
-		Assets:              embeddedfrontend.Assets(),
+		Assets:              webui.Assets(),
 		Branding:            branding,
 		NetworkEnabled:      resolved.Network.InfrastructureEnabled,
 		StandaloneEnabled:   resolved.Network.StandaloneEnabled,
@@ -132,11 +205,10 @@ func configuredSetupOptions(resolved appconfig.Config, hostname string) (interac
 		RestorationWait:     30 * time.Second,
 		ReadyLabel:          resolved.Product.Name + " setup",
 		Hostname:            hostname,
-		RecoveryGPIO:        resolved.Recovery.GPIO,
 	}, nil
 }
 
-type interactiveSetupOptions struct {
+type setupOptions struct {
 	Interface           string
 	ProvisioningSSID    string
 	ProvisioningPSK     string
@@ -161,12 +233,9 @@ type interactiveSetupOptions struct {
 	RestorationWait     time.Duration
 	ReadyLabel          string
 	Hostname            string
-	RecoveryGPIO        appconfig.RecoveryGPIO
 }
 
-func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, stdout io.Writer) error {
-	// Validate both possible AP profiles before connecting to D-Bus or changing the
-	// active interface. NewNetworkBackend repeats the standalone check at its boundary.
+func validateSetupOptions(options setupOptions) error {
 	if _, _, err := networkmanager.BuildAccessPointSettings(networkmanager.AccessPointOptions{
 		Interface: options.Interface,
 		SSID:      options.ProvisioningSSID,
@@ -193,90 +262,33 @@ func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, s
 	if _, err := fs.Stat(options.Assets, "index.html"); err != nil {
 		return fmt.Errorf("frontend assets: %w", err)
 	}
-	landingPage, err := fs.ReadFile(options.Assets, "landing.html")
-	if err != nil {
+	if _, err := fs.Stat(options.Assets, "landing.html"); err != nil {
 		return fmt.Errorf("frontend landing page: %w", err)
 	}
 	if options.Branding.Handoff == nil {
 		return errors.New("resolved handoff configuration is required")
 	}
+	return nil
+}
 
-	dns, err := captive.NewDNSConfigFile(options.DNSConfigPath)
-	if err != nil {
-		return err
-	}
-	client, err := openClient()
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-	redirect, err := captive.NewNFTRedirect("nft")
-	if err != nil {
-		return err
-	}
-	listenConfig := &net.ListenConfig{}
-	lifecycle, err := captive.NewLifecycle(client, dns, redirect, listenConfig.Listen)
-	if err != nil {
-		return err
-	}
-	publisher, err := discovery.Start(ctx, discovery.Options{
-		ServiceName: options.ReadyLabel,
-		Port:        options.ListenerHTTPPort,
-	})
-	if err != nil {
-		return fmt.Errorf("start mDNS discovery: %w", err)
-	}
-	if !strings.EqualFold(publisher.Hostname(), options.Hostname) {
-		cleanupContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return errors.Join(
-			fmt.Errorf("Avahi hostname changed from %q to %q while setup was starting", options.Hostname, publisher.Hostname()),
-			publisher.Close(cleanupContext),
-		)
-	}
-	portal := &swappableHandler{}
-	portal.Set(http.FileServer(http.FS(options.Assets)))
-	session, err := lifecycle.Start(ctx, captive.StartOptions{
-		Interface:        options.Interface,
-		SSID:             options.ProvisioningSSID,
-		Password:         options.ProvisioningPSK,
-		Address:          options.ProvisioningAddress,
-		Band:             options.Band,
-		Wait:             options.ActivationWait,
-		PublicHTTPPort:   options.PublicHTTPPort,
-		ListenerHTTPPort: options.ListenerHTTPPort,
-		PortalURL:        options.PortalURL,
-		SetupURL:         options.Branding.Handoff.SetupURL,
-		LandingPage:      landingPage,
-	}, portal)
-	if err != nil {
-		cleanupContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		return errors.Join(err, publisher.Close(cleanupContext))
-	}
-	cleanupAfterError := func(cause error) error {
-		cleanupContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		return errors.Join(cause, publisher.Close(cleanupContext), session.Stop(cleanupContext))
-	}
-	if err := client.DeletePendingInfrastructureProfiles(ctx, options.Interface); err != nil {
-		return cleanupAfterError(
-			fmt.Errorf("recover interrupted infrastructure candidates: %w", err),
-		)
-	}
+func newNetworkBackend(
+	client *networkmanager.Client,
+	captiveExiter setupflow.CaptiveExiter,
+	options setupOptions,
+) (*setupflow.NetworkBackend, error) {
 	infrastructureTransition, err := recovery.NewInfrastructure(client)
 	if err != nil {
-		return cleanupAfterError(err)
+		return nil, err
 	}
 	standaloneTransition, err := recovery.NewStandalone(client)
 	if err != nil {
-		return cleanupAfterError(err)
+		return nil, err
 	}
-	backend, err := setupflow.NewNetworkBackend(
+	return setupflow.NewNetworkBackend(
 		client,
 		infrastructureTransition,
 		standaloneTransition,
-		session,
+		captiveExiter,
 		setupflow.NetworkOptions{
 			Interface:         options.Interface,
 			Requirement:       options.Requirement,
@@ -294,61 +306,6 @@ func runInteractiveSetup(ctx context.Context, options interactiveSetupOptions, s
 			},
 		},
 	)
-	if err != nil {
-		return cleanupAfterError(err)
-	}
-	service, err := setupflow.NewService(ctx, backend, setupflow.Capabilities{
-		Network:    options.NetworkEnabled,
-		Standalone: options.StandaloneEnabled,
-	})
-	if err != nil {
-		return cleanupAfterError(err)
-	}
-	api, err := webui.NewAPI(service, options.PortalOrigin, options.Branding)
-	if err != nil {
-		return cleanupAfterError(err)
-	}
-	handler, err := webui.NewHandler(api, options.Assets)
-	if err != nil {
-		return cleanupAfterError(err)
-	}
-	portal.Set(handler)
-
-	activation := session.Activation()
-	fmt.Fprintf(stdout, "%s is ready\n", options.ReadyLabel)
-	fmt.Fprintf(stdout, "SSID: %s\n", options.ProvisioningSSID)
-	fmt.Fprintf(stdout, "Portal: %s\n", session.PortalURL())
-	fmt.Fprintf(stdout, "Setup: %s\n", options.Branding.Handoff.SetupURL)
-	fmt.Fprintf(stdout, "UUID: %s\n", activation.UUID)
-	fmt.Fprintln(stdout, "Press Ctrl+C to stop setup and remove temporary resources.")
-
-	var serveErr error
-	select {
-	case <-ctx.Done():
-	case <-session.Done():
-		serveErr = session.Wait()
-		if serveErr == nil {
-			serveErr = errors.New("setup HTTP listener stopped unexpectedly")
-		}
-	}
-	operationContext, cancelOperations := context.WithTimeout(
-		context.Background(),
-		options.RestorationWait+applianceCleanupTimeout,
-	)
-	operationErr := service.Shutdown(operationContext)
-	cancelOperations()
-	cleanupContext, cancelCleanup := context.WithTimeout(
-		context.Background(),
-		applianceCleanupTimeout,
-	)
-	defer cancelCleanup()
-	discoveryErr := publisher.Close(cleanupContext)
-	stopErr := session.Stop(cleanupContext)
-	if serveErr != nil || operationErr != nil || discoveryErr != nil || stopErr != nil {
-		return errors.Join(serveErr, operationErr, discoveryErr, stopErr)
-	}
-	fmt.Fprintln(stdout, "interactive setup stopped and temporary resources were removed")
-	return nil
 }
 
 func portalOrigin(value string) (string, error) {
@@ -365,29 +322,6 @@ func portalURLFor(address netip.Prefix, port uint16) string {
 		host = net.JoinHostPort(host, fmt.Sprint(port))
 	}
 	return "http://" + host + "/"
-}
-
-type swappableHandler struct {
-	mu      sync.RWMutex
-	handler http.Handler
-}
-
-func (handler *swappableHandler) Set(next http.Handler) {
-	handler.mu.Lock()
-	handler.handler = next
-	handler.mu.Unlock()
-}
-
-func (handler *swappableHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	handler.mu.RLock()
-	current := handler.handler
-	handler.mu.RUnlock()
-	if current == nil {
-		response.Header().Set("Cache-Control", "no-store")
-		http.Error(response, "Setup is starting. Try again in a moment.", http.StatusServiceUnavailable)
-		return
-	}
-	current.ServeHTTP(response, request)
 }
 
 func readSecurePasswordFile(path string) (string, error) {

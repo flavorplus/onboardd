@@ -5,7 +5,7 @@
       "label": "Go: build onboardd",
       "type": "process",
       "command": "go",
-      "args": ["build", "-o", "${workspaceFolder}/bin/onboardd", "./cmd/onboardd"],
+      "args": ["build", "-o", "${workspaceFolder}/bin/onboardd", "."],
       "group": {
         "kind": "build",
         "isDefault": true
@@ -32,7 +32,7 @@
         "-ldflags=-buildid=",
         "-o",
         "${workspaceFolder}/bin/onboardd-linux-arm64",
-        "./cmd/onboardd"
+        "."
       ],
       "options": {
         "env": {
@@ -55,7 +55,7 @@
         "-ldflags=-buildid=",
         "-o",
         "${workspaceFolder}/bin/onboardd-linux-amd64",
-        "./cmd/onboardd"
+        "."
       ],
       "options": {
         "env": {
@@ -98,29 +98,10 @@
       "problemMatcher": []
     },
     {
-      "label": "Config: inspect example",
-      "type": "process",
-      "command": "go",
-      "args": [
-        "run",
-        "./cmd/onboardd",
-        "debug",
-        "config",
-        "--config",
-        "config/example.toml",
-        "--render",
-        "--device-id",
-        "DEV00001",
-        "--hostname",
-        "onboardd-dev"
-      ],
-      "problemMatcher": "$go"
-    },
-    {
       "label": "Frontend: install",
       "type": "process",
       "command": "npm",
-      "args": ["install"],
+      "args": ["ci"],
       "options": {
         "cwd": "${workspaceFolder}/frontend"
       },
@@ -159,17 +140,17 @@
       "isBackground": true,
       "problemMatcher": []
     },
-		{
-			"label": "Frontend: dev (branded)",
-			"type": "process",
-			"command": "npm",
-			"args": ["run", "dev:branded"],
-			"options": {
-				"cwd": "${workspaceFolder}/frontend"
-			},
-			"isBackground": true,
-			"problemMatcher": []
-		},
+    {
+      "label": "Frontend: dev (branded)",
+      "type": "process",
+      "command": "npm",
+      "args": ["run", "dev:branded"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
     {
       "label": "Frontend: test",
       "type": "process",
@@ -197,8 +178,6 @@
       "command": "bash",
       "args": [
         "-n",
-        "scripts/setup-recorder.sh",
-        "scripts/dbus-trace-recorder.sh",
         "scripts/build-release.sh",
         "scripts/build-deb.sh",
         "scripts/check-deb.sh",

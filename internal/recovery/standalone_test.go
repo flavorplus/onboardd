@@ -119,9 +119,9 @@ func (network *fakeStandaloneNetwork) CreateCheckpoint(
 	context.Context,
 	string,
 	time.Duration,
-) (networkmanager.Checkpoint, error) {
+) (string, error) {
 	network.calls = append(network.calls, "checkpoint-create")
-	return networkmanager.Checkpoint{Path: "/org/freedesktop/NetworkManager/Checkpoint/2"}, nil
+	return "/org/freedesktop/NetworkManager/Checkpoint/2", nil
 }
 
 func (network *fakeStandaloneNetwork) StartAccessPoint(
@@ -212,12 +212,12 @@ func (network *fakeStandaloneNetwork) CommitCheckpoint(context.Context, string) 
 func (network *fakeStandaloneNetwork) RollbackCheckpoint(
 	context.Context,
 	string,
-) (networkmanager.RollbackResult, error) {
+) error {
 	network.calls = append(network.calls, "checkpoint-rollback")
 	if network.fail == "rollback-after-wait" {
-		return networkmanager.RollbackResult{}, errors.New("rollback failure")
+		return errors.New("rollback failure")
 	}
-	return networkmanager.RollbackResult{}, nil
+	return nil
 }
 
 func (network *fakeStandaloneNetwork) DeleteOwnedProfile(_ context.Context, uuid string) error {

@@ -119,10 +119,6 @@ type GraceExpiredEvent struct{}
 
 func (GraceExpiredEvent) Kind() EventKind { return EventGraceExpired }
 
-type CancelledEvent struct{}
-
-func (CancelledEvent) Kind() EventKind { return EventCancelled }
-
 // Transition is emitted whenever the observable state changes.
 type Transition struct {
 	Previous State     `json:"previous"`

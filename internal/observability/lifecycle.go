@@ -51,7 +51,17 @@ func (lifecycle *Lifecycle) ObserveNetworkState(
 	trigger stateengine.EventKind,
 ) {
 	lifecycle.health.ObserveNetworkState(sequence, stage, mode, reason)
-	lifecycle.logger.InfoContext(
+	if stage != stateengine.StageInfrastructure &&
+		stage != stateengine.StageStandalone &&
+		stage != stateengine.StageProvisioning &&
+		stage != stateengine.StageFailed {
+		return
+	}
+	log := lifecycle.logger.InfoContext
+	if stage == stateengine.StageFailed {
+		log = lifecycle.logger.WarnContext
+	}
+	log(
 		ctx,
 		lifecycleMessage,
 		"event", "network_state_changed",
@@ -79,20 +89,15 @@ func (lifecycle *Lifecycle) ProvisioningAction(
 	if entering {
 		action = "enter"
 	}
-	outcome := "failed"
 	if succeeded {
-		outcome = "succeeded"
+		return
 	}
-	method := lifecycle.logger.WarnContext
-	if succeeded {
-		method = lifecycle.logger.InfoContext
-	}
-	method(
+	lifecycle.logger.WarnContext(
 		ctx,
 		lifecycleMessage,
 		"event", "provisioning_action",
 		"action", action,
-		"outcome", outcome,
+		"outcome", "failed",
 	)
 }
 

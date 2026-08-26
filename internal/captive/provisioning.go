@@ -179,7 +179,7 @@ func confirmProvisioningAddress(
 	address netip.Addr,
 ) error {
 	if status.Device.State != networkmanager.DeviceStateActivated {
-		return fmt.Errorf("device state is %s, want activated", status.Device.StateName)
+		return fmt.Errorf("device state is %s, want activated", status.Device.State)
 	}
 	if status.Device.ActiveUUID != uuid {
 		return fmt.Errorf("active profile is %q, want %q", status.Device.ActiveUUID, uuid)

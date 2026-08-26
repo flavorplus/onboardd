@@ -41,9 +41,3 @@ listener_port = 18080
 # application_url = "http://{{ .Hostname }}.local/"
 # health_check_url = "http://127.0.0.1/health"
 show_standalone_credentials = false
-
-[recovery.gpio]
-# Optional normally-open recovery button, held for three seconds to enter setup.
-enabled = false
-chip = "/dev/gpiochip0"
-line = 17

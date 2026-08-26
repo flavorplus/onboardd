@@ -29,8 +29,8 @@ type HTTPHandler struct {
 }
 
 // NewHTTPHandler validates the canonical portal URL and creates a captive HTTP handler.
-// Phase 3 deliberately supports only cleartext HTTP: presenting an untrusted certificate
-// for intercepted HTTPS traffic would be both unreliable and misleading.
+// Captive setup deliberately uses cleartext HTTP: an untrusted certificate for
+// intercepted HTTPS traffic would be both unreliable and misleading.
 func NewHTTPHandler(
 	portalURL, setupURL string,
 	listenerPort uint16,

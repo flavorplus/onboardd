@@ -2,6 +2,7 @@ package captive
 
 import (
 	"context"
+	"net/netip"
 	"reflect"
 	"testing"
 	"time"
@@ -115,13 +116,12 @@ func TestProvisionerValidatesDependencies(t *testing.T) {
 }
 
 func validProvisioningOptions() ProvisioningOptions {
-	options := validStartOptions()
 	return ProvisioningOptions{
-		Interface: options.Interface,
-		SSID:      options.SSID,
-		Password:  options.Password,
-		Address:   options.Address,
-		Band:      options.Band,
-		Wait:      options.Wait,
+		Interface: "wlan0",
+		SSID:      "Onboardd Setup",
+		Password:  "test-password",
+		Address:   netip.MustParsePrefix("10.42.0.1/24"),
+		Band:      "bg",
+		Wait:      30 * time.Second,
 	}
 }

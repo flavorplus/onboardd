@@ -160,3 +160,17 @@ export function modeLabel(mode: Mode): string {
       return "Not configured";
   }
 }
+
+export function wifiQRPayload(ssid: string, password: string): string {
+  const escapeField = (value: string): string =>
+    value.replace(/[\\;,":]/g, (character) => `\\${character}`);
+  return `WIFI:T:WPA;S:${escapeField(ssid)};P:${escapeField(password)};;`;
+}
+
+export function needsBrowserHandoff(currentURL: string, setupURL: string): boolean {
+  try {
+    return new URL(currentURL).origin !== new URL(setupURL).origin;
+  } catch {
+    return true;
+  }
+}

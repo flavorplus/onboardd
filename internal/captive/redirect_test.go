@@ -9,9 +9,9 @@ import (
 )
 
 func TestRenderNFTRedirect(t *testing.T) {
-	got, err := RenderNFTRedirect("wlan0", 80, 18080)
+	got, err := renderNFTRedirect("wlan0", 80, 18080)
 	if err != nil {
-		t.Fatalf("RenderNFTRedirect() error = %v", err)
+		t.Fatalf("renderNFTRedirect() error = %v", err)
 	}
 	want := "table inet onboardd_captive {\n" +
 		"  chain prerouting {\n" +
@@ -20,7 +20,7 @@ func TestRenderNFTRedirect(t *testing.T) {
 		"  }\n" +
 		"}\n"
 	if got != want {
-		t.Fatalf("RenderNFTRedirect() = %q, want %q", got, want)
+		t.Fatalf("renderNFTRedirect() = %q, want %q", got, want)
 	}
 }
 
@@ -38,8 +38,8 @@ func TestRenderNFTRedirectValidatesInput(t *testing.T) {
 		{name: "same port", interfaceName: "wlan0", publicPort: 80, listenerPort: 80},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := RenderNFTRedirect(test.interfaceName, test.publicPort, test.listenerPort); err == nil {
-				t.Fatal("RenderNFTRedirect() unexpectedly succeeded")
+			if _, err := renderNFTRedirect(test.interfaceName, test.publicPort, test.listenerPort); err == nil {
+				t.Fatal("renderNFTRedirect() unexpectedly succeeded")
 			}
 		})
 	}

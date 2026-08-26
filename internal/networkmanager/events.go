@@ -9,8 +9,7 @@ import (
 )
 
 // WatchProperties streams NetworkManager PropertiesChanged signals until the context is
-// cancelled. It is diagnostic infrastructure for Phase 1 and the basis for Phase 2's
-// event-driven reconciler.
+// cancelled. The state observer uses it to trigger event-driven reconciliation.
 func (c *Client) WatchProperties(ctx context.Context) (<-chan Event, <-chan error, error) {
 	matchOptions := []dbus.MatchOption{
 		dbus.WithMatchSender(service),

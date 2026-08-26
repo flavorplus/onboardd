@@ -13,7 +13,6 @@ func TestNetworkManagerObserverNormalizesSnapshot(t *testing.T) {
 		status: networkmanager.Status{
 			Connectivity: networkmanager.ConnectivityLimited,
 			Device: networkmanager.Device{
-				Interface:     "wlan0",
 				Managed:       true,
 				State:         networkmanager.DeviceStateActivated,
 				ActiveUUID:    "office",

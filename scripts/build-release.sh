@@ -60,7 +60,7 @@ trap cleanup EXIT
 export LC_ALL=C
 umask 022
 
-ldflags="-s -w -buildid= -X github.com/flavorplus/onboardd/internal/buildinfo.Version=${version}"
+ldflags="-s -w -buildid= -X github.com/flavorplus/onboardd/internal/cli.Version=${version}"
 
 build_linux() {
   local architecture=$1
@@ -101,7 +101,7 @@ build_linux() {
         -buildvcs=false \
         -ldflags="$ldflags" \
         -o "$output" \
-        ./cmd/onboardd
+        .
   )
 }
 
@@ -133,7 +133,7 @@ verify_embedded_version() {
         -buildvcs=false \
         -ldflags="$ldflags" \
         -o "$host_binary" \
-        ./cmd/onboardd
+        .
   )
   actual=$("$host_binary" --version)
   if [[ $actual != "onboardd ${version}" ]]; then

@@ -11,14 +11,14 @@ import (
 )
 
 type standaloneNetworkManager interface {
-	CreateCheckpoint(context.Context, string, time.Duration) (networkmanager.Checkpoint, error)
+	CreateCheckpoint(context.Context, string, time.Duration) (string, error)
 	StartAccessPoint(context.Context, networkmanager.AccessPointOptions) (networkmanager.Activation, error)
 	ActivateProfile(context.Context, string, string) (networkmanager.Activation, error)
 	WaitForActivation(context.Context, string, string, time.Duration) error
 	Status(context.Context, string) (networkmanager.Status, error)
 	FinalizeTransition(context.Context, string, networkmanager.Role, string, string) error
 	CommitCheckpoint(context.Context, string) error
-	RollbackCheckpoint(context.Context, string) (networkmanager.RollbackResult, error)
+	RollbackCheckpoint(context.Context, string) error
 	DeleteOwnedProfile(context.Context, string) error
 }
 
@@ -72,7 +72,7 @@ func (transition *Standalone) Attempt(
 	if err != nil {
 		return networkmanager.Activation{}, transition.rollback(
 			options,
-			checkpoint.Path,
+			checkpoint,
 			activation.UUID,
 			fmt.Errorf("activate standalone profile: %w", err),
 		)
@@ -85,7 +85,7 @@ func (transition *Standalone) Attempt(
 	); err != nil {
 		return networkmanager.Activation{}, transition.rollback(
 			options,
-			checkpoint.Path,
+			checkpoint,
 			activation.UUID,
 			fmt.Errorf("wait for standalone profile: %w", err),
 		)
@@ -94,7 +94,7 @@ func (transition *Standalone) Attempt(
 	if err != nil {
 		return networkmanager.Activation{}, transition.rollback(
 			options,
-			checkpoint.Path,
+			checkpoint,
 			activation.UUID,
 			fmt.Errorf("inspect standalone profile: %w", err),
 		)
@@ -103,7 +103,7 @@ func (transition *Standalone) Attempt(
 	if !connectionActive(status, activation.UUID, standaloneAddress) {
 		return networkmanager.Activation{}, transition.rollback(
 			options,
-			checkpoint.Path,
+			checkpoint,
 			activation.UUID,
 			fmt.Errorf("standalone profile %s is not active at %s", activation.UUID, standaloneAddress),
 		)
@@ -117,15 +117,15 @@ func (transition *Standalone) Attempt(
 	); err != nil {
 		return networkmanager.Activation{}, transition.rollback(
 			options,
-			checkpoint.Path,
+			checkpoint,
 			activation.UUID,
 			fmt.Errorf("select standalone mode: %w", err),
 		)
 	}
-	if err := transition.network.CommitCheckpoint(ctx, checkpoint.Path); err != nil {
+	if err := transition.network.CommitCheckpoint(ctx, checkpoint); err != nil {
 		return networkmanager.Activation{}, transition.rollback(
 			options,
-			checkpoint.Path,
+			checkpoint,
 			activation.UUID,
 			fmt.Errorf("commit standalone transition: %w", err),
 		)
@@ -141,7 +141,7 @@ func (transition *Standalone) rollback(
 ) error {
 	cleanupContext, cancel := context.WithTimeout(context.Background(), options.RestorationWait)
 	defer cancel()
-	if _, err := transition.network.RollbackCheckpoint(cleanupContext, checkpointPath); err != nil {
+	if err := transition.network.RollbackCheckpoint(cleanupContext, checkpointPath); err != nil {
 		return errors.Join(cause, fmt.Errorf("rollback NetworkManager checkpoint: %w", err))
 	}
 

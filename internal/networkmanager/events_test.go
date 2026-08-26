@@ -15,7 +15,7 @@ func TestPropertyEvent(t *testing.T) {
 		Body: []any{
 			managerInterface,
 			map[string]dbus.Variant{
-				"State":             dbus.MakeVariant(uint32(StateConnectedGlobal)),
+				"State":             dbus.MakeVariant(uint32(70)),
 				"PrimaryConnection": dbus.MakeVariant(dbus.ObjectPath("/active/1")),
 			},
 			[]string{"Connectivity"},

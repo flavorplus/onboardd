@@ -2,6 +2,9 @@ package captive
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
@@ -322,4 +325,134 @@ func countCalls(calls []string, want string) int {
 		}
 	}
 	return count
+}
+
+func containsCall(calls []string, want string) bool {
+	return countCalls(calls, want) != 0
+}
+
+type fakeDNSConfigurer struct {
+	calls          *[]string
+	fail           string
+	removeFailures int
+}
+
+func (dns *fakeDNSConfigurer) Install(address netip.Addr) error {
+	*dns.calls = append(*dns.calls, "dns-install:"+address.String())
+	if dns.fail == "dns-install" {
+		return errors.New("test failure")
+	}
+	return nil
+}
+
+func (dns *fakeDNSConfigurer) Remove() error {
+	*dns.calls = append(*dns.calls, "dns-remove")
+	if dns.removeFailures > 0 {
+		dns.removeFailures--
+		return errors.New("test removal failure")
+	}
+	return nil
+}
+
+type fakePortRedirector struct {
+	calls          *[]string
+	fail           string
+	removeFailures int
+}
+
+func (redirect *fakePortRedirector) Install(
+	_ context.Context,
+	interfaceName string,
+	publicPort uint16,
+	listenerPort uint16,
+) error {
+	*redirect.calls = append(
+		*redirect.calls,
+		fmt.Sprintf("redirect-install:%s:%d:%d", interfaceName, publicPort, listenerPort),
+	)
+	if redirect.fail == "redirect" {
+		return errors.New("test failure")
+	}
+	return nil
+}
+
+func (redirect *fakePortRedirector) Remove(context.Context) error {
+	*redirect.calls = append(*redirect.calls, "redirect-remove")
+	if redirect.removeFailures > 0 {
+		redirect.removeFailures--
+		return errors.New("test removal failure")
+	}
+	return nil
+}
+
+type fakeNetworkManager struct {
+	calls              *[]string
+	fail               string
+	deleteFailures     int
+	finalizedInterface string
+	finalizedRole      networkmanager.Role
+	finalizedKeepUUID  string
+}
+
+func (network *fakeNetworkManager) StartAccessPoint(
+	_ context.Context,
+	options networkmanager.AccessPointOptions,
+) (networkmanager.Activation, error) {
+	*network.calls = append(*network.calls, "start-ap")
+	if network.fail == "start-ap" {
+		return networkmanager.Activation{}, errors.New("test failure")
+	}
+	if options.Role != networkmanager.RoleProvisioning || options.Autoconnect {
+		return networkmanager.Activation{}, errors.New("invalid provisioning options")
+	}
+	return networkmanager.Activation{
+		UUID:       "provisioning-uuid",
+		ActivePath: "/org/freedesktop/NetworkManager/ActiveConnection/1",
+	}, nil
+}
+
+func (network *fakeNetworkManager) WaitForActivation(context.Context, string, string, time.Duration) error {
+	*network.calls = append(*network.calls, "wait")
+	if network.fail == "wait" {
+		return errors.New("test failure")
+	}
+	return nil
+}
+
+func (network *fakeNetworkManager) Status(context.Context, string) (networkmanager.Status, error) {
+	*network.calls = append(*network.calls, "status")
+	if network.fail == "status" {
+		return networkmanager.Status{}, errors.New("test failure")
+	}
+	return networkmanager.Status{Device: networkmanager.Device{
+		State:         networkmanager.DeviceStateActivated,
+		ActiveUUID:    "provisioning-uuid",
+		IPv4Addresses: []string{"10.42.0.1"},
+	}}, nil
+}
+
+func (network *fakeNetworkManager) FinalizeTransition(
+	_ context.Context,
+	interfaceName string,
+	role networkmanager.Role,
+	_ string,
+	keepUUID string,
+) error {
+	*network.calls = append(*network.calls, "finalize")
+	network.finalizedInterface = interfaceName
+	network.finalizedRole = role
+	network.finalizedKeepUUID = keepUUID
+	if network.fail == "finalize" {
+		return errors.New("test failure")
+	}
+	return nil
+}
+
+func (network *fakeNetworkManager) DeleteOwnedProfile(_ context.Context, uuid string) error {
+	*network.calls = append(*network.calls, "delete:"+uuid)
+	if network.deleteFailures > 0 {
+		network.deleteFailures--
+		return errors.New("test deletion failure")
+	}
+	return nil
 }

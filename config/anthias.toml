@@ -1,9 +1,9 @@
-# Phase 6 acceptance fixture: healthy application and visible standalone credentials.
+# Example configuration for an Anthias player.
 schema_version = 1
 
 [product]
-name = "Onboardd"
-device_name = "Phase 6 display"
+name = "Anthias"
+device_name = "Lobby player"
 
 [branding]
 primary_color = "#cd2455"
@@ -11,7 +11,7 @@ background_color = "#f8eff3"
 
 [branding.text]
 title = "Set up {{ .DeviceName }}"
-subtitle = "Verify browser handoff across every network mode."
+subtitle = "Connect this Anthias player or keep it available as its own network."
 
 [network]
 interface = "wlan0"
@@ -20,11 +20,11 @@ infrastructure_enabled = true
 standalone_enabled = true
 
 [network.provisioning]
-ssid = "Onboardd-Setup-{{ .DeviceID }}"
+ssid = "Anthias-Setup-{{ .DeviceID }}"
 password_file = "/etc/onboardd/provisioning-password"
 
 [network.standalone]
-ssid = "Onboardd-Standalone-{{ .DeviceID }}"
+ssid = "Anthias-{{ .DeviceID }}"
 password_file = "/etc/onboardd/standalone-password"
 address = "10.42.0.1/24"
 
@@ -32,9 +32,7 @@ address = "10.42.0.1/24"
 listener_port = 18080
 
 [handoff]
-application_label = "Open InkyPi"
-# .Hostname is read from Avahi and remains owned by the host.
+application_label = "Open Anthias"
 application_url = "http://{{ .Hostname }}.local/"
-# The acceptance Pi already serves InkyPi on port 80.
 health_check_url = "http://127.0.0.1/"
 show_standalone_credentials = true

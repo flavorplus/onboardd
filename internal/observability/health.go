@@ -32,7 +32,6 @@ const (
 	ComponentReconciler Component = "reconciler"
 	ComponentHTTP       Component = "setup-http"
 	ComponentControl    Component = "recovery-control"
-	ComponentGPIO       Component = "recovery-gpio"
 	ComponentCaptive    Component = "captive-resources"
 	ComponentSystemd    Component = "systemd-notify"
 )
@@ -69,8 +68,7 @@ func (snapshot Snapshot) WatchdogHealthy() bool {
 }
 
 // Health owns the concurrency-safe lifecycle snapshot and a coalesced change signal.
-// Changes is intentionally transport-neutral so Phase 8 can attach systemd notification
-// without changing the appliance controller.
+// Changes is transport-neutral so the systemd notifier stays outside the controller.
 type Health struct {
 	mu       sync.RWMutex
 	snapshot Snapshot

@@ -323,9 +323,9 @@ func (network *fakeNetwork) CreateCheckpoint(
 	context.Context,
 	string,
 	time.Duration,
-) (networkmanager.Checkpoint, error) {
+) (string, error) {
 	network.calls = append(network.calls, "checkpoint-create")
-	return networkmanager.Checkpoint{Path: "/org/freedesktop/NetworkManager/Checkpoint/1"}, nil
+	return "/org/freedesktop/NetworkManager/Checkpoint/1", nil
 }
 
 func (network *fakeNetwork) ConnectInfrastructure(
@@ -375,7 +375,6 @@ func (network *fakeNetwork) Status(context.Context, string) (networkmanager.Stat
 		if network.restoredUUID != "" {
 			return networkmanager.Status{Device: networkmanager.Device{
 				State:         networkmanager.DeviceStateActivated,
-				StateName:     "activated",
 				ActiveUUID:    network.restoredUUID,
 				IPv4Addresses: []string{"10.42.0.1"},
 			}}, nil
@@ -386,7 +385,6 @@ func (network *fakeNetwork) Status(context.Context, string) (networkmanager.Stat
 		Connectivity: network.connectivity,
 		Device: networkmanager.Device{
 			State:         networkmanager.DeviceStateActivated,
-			StateName:     "activated",
 			ActiveUUID:    network.activeCandidateUUID(),
 			IPv4Addresses: []string{"192.168.1.20"},
 		},
@@ -447,12 +445,12 @@ func (network *fakeNetwork) CommitCheckpoint(context.Context, string) error {
 func (network *fakeNetwork) RollbackCheckpoint(
 	context.Context,
 	string,
-) (networkmanager.RollbackResult, error) {
+) error {
 	network.calls = append(network.calls, "checkpoint-rollback")
 	if network.fail == "rollback-after-wait" {
-		return networkmanager.RollbackResult{}, errors.New("test rollback failure")
+		return errors.New("test rollback failure")
 	}
-	return networkmanager.RollbackResult{}, nil
+	return nil
 }
 
 func (network *fakeNetwork) DeleteOwnedProfile(_ context.Context, uuid string) error {
@@ -463,7 +461,6 @@ func (network *fakeNetwork) DeleteOwnedProfile(_ context.Context, uuid string) e
 func provisioningStatus() networkmanager.Status {
 	return networkmanager.Status{Device: networkmanager.Device{
 		State:         networkmanager.DeviceStateActivated,
-		StateName:     "activated",
 		ActiveUUID:    "provisioning-uuid",
 		IPv4Addresses: []string{"10.42.0.1"},
 	}}

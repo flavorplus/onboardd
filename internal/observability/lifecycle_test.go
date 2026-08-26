@@ -17,6 +17,14 @@ func TestLifecycleEmitsStructuredRedactedEvents(t *testing.T) {
 	lifecycle.Starting(context.Background())
 	lifecycle.ObserveNetworkState(
 		context.Background(),
+		7,
+		stateengine.StageReconciling,
+		stateengine.ModeNone,
+		stateengine.ReasonInspectingNetwork,
+		stateengine.EventBoot,
+	)
+	lifecycle.ObserveNetworkState(
+		context.Background(),
 		8,
 		stateengine.StageFailed,
 		stateengine.ModeNone,
@@ -24,6 +32,7 @@ func TestLifecycleEmitsStructuredRedactedEvents(t *testing.T) {
 		stateengine.EventNetworkChanged,
 	)
 	lifecycle.RecoveryRequested(context.Background())
+	lifecycle.ProvisioningAction(context.Background(), true, true)
 	lifecycle.ProvisioningAction(context.Background(), true, false)
 	lifecycle.ComponentRetry(context.Background(), ComponentReconciler, 2, 3)
 	lifecycle.ComponentRecovered(context.Background(), ComponentReconciler)
@@ -62,6 +71,12 @@ func TestLifecycleEmitsStructuredRedactedEvents(t *testing.T) {
 		if !found {
 			t.Errorf("event %q was not logged", event)
 		}
+	}
+	if strings.Count(logs, `"event":"network_state_changed"`) != 1 {
+		t.Fatalf("transient network state was logged:\n%s", logs)
+	}
+	if strings.Count(logs, `"event":"provisioning_action"`) != 1 {
+		t.Fatalf("successful provisioning action was logged:\n%s", logs)
 	}
 }
 

@@ -157,7 +157,7 @@ for architecture in amd64 arm64; do
   cmp "$data_root/usr/bin/onboardd" "$binary"
   cmp \
     "$data_root/usr/lib/systemd/system/onboardd.service" \
-    "${repository_root}/packaging/systemd/onboardd.service"
+    "${repository_root}/packaging/debian/onboardd.service"
   cmp "$data_root/etc/onboardd/config.toml" "${repository_root}/packaging/debian/config.toml"
   cmp "$data_root/usr/share/doc/onboardd/copyright" "${repository_root}/LICENSE"
   (

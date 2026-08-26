@@ -29,7 +29,7 @@ func TestStartHTTPServerServesAndShutsDown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := StartHTTPServer(listener, handler)
+	server, err := startHTTPServer(listener, handler)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestHTTPServerForceClosesActiveRequestAfterGracefulShutdownExpires(t *testi
 	listener := newMemoryListener()
 	requestStarted := make(chan struct{})
 	requestStopped := make(chan struct{})
-	server, err := StartHTTPServer(listener, http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+	server, err := startHTTPServer(listener, http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
 		close(requestStarted)
 		<-request.Context().Done()
 		close(requestStopped)
@@ -122,13 +122,13 @@ func TestHTTPServerForceClosesActiveRequestAfterGracefulShutdownExpires(t *testi
 
 func TestStartHTTPServerValidatesDependencies(t *testing.T) {
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
-	if _, err := StartHTTPServer(nil, handler); err == nil || !strings.Contains(err.Error(), "listener") {
+	if _, err := startHTTPServer(nil, handler); err == nil || !strings.Contains(err.Error(), "listener") {
 		t.Fatalf("nil listener error = %v", err)
 	}
 
 	listener := newMemoryListener()
 	defer listener.Close()
-	if _, err := StartHTTPServer(listener, nil); err == nil || !strings.Contains(err.Error(), "handler") {
+	if _, err := startHTTPServer(listener, nil); err == nil || !strings.Contains(err.Error(), "handler") {
 		t.Fatalf("nil handler error = %v", err)
 	}
 }
@@ -137,7 +137,7 @@ func TestListenHTTPServerBindsAndStartsServer(t *testing.T) {
 	listener := newMemoryListener()
 	var gotNetwork string
 	var gotAddress string
-	server, err := ListenHTTPServer(
+	server, err := listenHTTPServer(
 		context.Background(),
 		func(_ context.Context, network, address string) (net.Listener, error) {
 			gotNetwork = network
@@ -167,7 +167,7 @@ func TestListenHTTPServerBindsAndStartsServer(t *testing.T) {
 
 func TestListenHTTPServerClosesListenerWhenServerStartFails(t *testing.T) {
 	listener := newMemoryListener()
-	_, err := ListenHTTPServer(
+	_, err := listenHTTPServer(
 		context.Background(),
 		func(context.Context, string, string) (net.Listener, error) {
 			return listener, nil
@@ -177,7 +177,7 @@ func TestListenHTTPServerClosesListenerWhenServerStartFails(t *testing.T) {
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "handler") {
-		t.Fatalf("ListenHTTPServer() error = %v", err)
+		t.Fatalf("listenHTTPServer() error = %v", err)
 	}
 	select {
 	case <-listener.closed:
@@ -187,7 +187,7 @@ func TestListenHTTPServerClosesListenerWhenServerStartFails(t *testing.T) {
 }
 
 func TestListenHTTPServerValidatesListenFunction(t *testing.T) {
-	_, err := ListenHTTPServer(
+	_, err := listenHTTPServer(
 		context.Background(),
 		nil,
 		"tcp4",
@@ -202,7 +202,7 @@ func TestListenHTTPServerValidatesListenFunction(t *testing.T) {
 func TestHTTPServerReportsUnexpectedListenerFailure(t *testing.T) {
 	wantErr := errors.New("accept failed")
 	listener := &failingListener{err: wantErr}
-	server, err := StartHTTPServer(listener, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server, err := startHTTPServer(listener, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	if err != nil {
 		t.Fatal(err)
 	}

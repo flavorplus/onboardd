@@ -30,6 +30,10 @@
   "explorer.fileNesting.enabled": true,
   "explorer.fileNesting.patterns": {
     "go.mod": "go.sum",
-    "README.md": "LICENSE, CONTRIBUTING.md, CHANGELOG.md"
+    "README.md": "LICENSE, CONTRIBUTING.md, CHANGELOG.md",
+    "*.go": "${capture}_test.go",
+    "package.json": "package-lock.json",
+    "index.html": "landing.html",
+    "example.toml": "schema.json, anthias.toml, inkypi.toml"
   }
 }

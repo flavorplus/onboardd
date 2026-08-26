@@ -1,14 +1,17 @@
 package config
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/flavorplus/onboardd/internal/connectivity"
 )
 
 func TestDecodeOverlaysDefaults(t *testing.T) {
-	loaded, err := Decode(strings.NewReader(`
+	loaded, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [product]
@@ -39,7 +42,7 @@ listener_port = 19000
 }
 
 func TestDecodeRequiresSchemaVersion(t *testing.T) {
-	_, err := Decode(strings.NewReader(`[product]
+	_, err := decodeForTest(strings.NewReader(`[product]
 name = "Display"
 `))
 	if err == nil || !strings.Contains(err.Error(), "schema_version is required") {
@@ -48,7 +51,7 @@ name = "Display"
 }
 
 func TestDecodeRejectsUnknownKeys(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
+	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [network]
@@ -68,7 +71,7 @@ accent_color = "#123456"
 }
 
 func TestDecodeRejectsRemovedHandoffHostname(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
+	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [handoff]
@@ -80,7 +83,7 @@ hostname = "display-player"
 }
 
 func TestDecodeRejectsDisabledProductionModes(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
+	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [network]
@@ -93,7 +96,7 @@ standalone_enabled = false
 }
 
 func TestDecodeRejectsNetworkAddressForStandaloneGateway(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
+	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [network.standalone]
@@ -105,7 +108,7 @@ address = "10.50.0.0/24"
 }
 
 func TestDecodeRejectsBroadcastAddressForStandaloneGateway(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
+	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [network.standalone]
@@ -117,7 +120,7 @@ address = "10.50.0.255/24"
 }
 
 func TestDecodeRejectsCaptivePublicPortAsListener(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
+	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [portal]
@@ -128,38 +131,8 @@ listener_port = 80
 	}
 }
 
-func TestDecodeLoadsGPIORecovery(t *testing.T) {
-	loaded, err := Decode(strings.NewReader(`
-schema_version = 1
-
-[recovery.gpio]
-enabled = true
-chip = "/dev/gpiochip2"
-line = 23
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !loaded.Recovery.GPIO.Enabled || loaded.Recovery.GPIO.Chip != "/dev/gpiochip2" ||
-		loaded.Recovery.GPIO.Line != 23 {
-		t.Fatalf("Recovery.GPIO = %+v", loaded.Recovery.GPIO)
-	}
-}
-
-func TestDecodeRejectsRelativeGPIOChipPath(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
-schema_version = 1
-
-[recovery.gpio]
-chip = "gpiochip0"
-`))
-	if err == nil || !strings.Contains(err.Error(), "absolute device path") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
 func TestDecodeRejectsIncompleteApplicationHandoff(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
+	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [handoff]
@@ -171,7 +144,7 @@ application_label = "Open player"
 }
 
 func TestDecodeRejectsWhitespaceOnlyApplicationHandoff(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
+	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [handoff]
@@ -184,7 +157,7 @@ application_url = "http://device.local/"
 }
 
 func TestDecodeRejectsHealthCheckWithoutApplication(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
+	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [handoff]
@@ -196,7 +169,7 @@ health_check_url = "http://127.0.0.1/health"
 }
 
 func TestDecodeRejectsInvalidStaticHandoffURL(t *testing.T) {
-	_, err := Decode(strings.NewReader(`
+	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1
 
 [handoff]
@@ -213,18 +186,113 @@ func TestLoadFileIncludesPathInError(t *testing.T) {
 	if err := os.WriteFile(path, []byte("schema_version = 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := LoadFile(path)
+	_, err := Resolve(ResolveOptions{ConfigPath: path})
 	if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "unsupported schema_version") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestReferenceConfigurationLoads(t *testing.T) {
-	loaded, err := LoadFile(filepath.Join("..", "..", "config", "example.toml"))
+	loaded, err := Resolve(ResolveOptions{ConfigPath: filepath.Join("..", "..", "config", "example.toml")})
 	if err != nil {
-		t.Fatalf("LoadFile(example.toml) error = %v", err)
+		t.Fatalf("Resolve(example.toml) error = %v", err)
 	}
 	if loaded.Product.Name != "Display Player" {
 		t.Fatalf("Product.Name = %q", loaded.Product.Name)
 	}
+}
+
+func TestResolveAppliesOverridesAfterFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(`
+schema_version = 1
+
+[network]
+interface = "from-toml"
+requirement = "local"
+standalone_enabled = false
+
+[portal]
+listener_port = 18001
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	interfaceOverride := "from-cli"
+	requirementOverride := connectivity.RequirementLocal
+	standaloneOverride := true
+	portOverride := uint16(18003)
+
+	resolved, err := Resolve(ResolveOptions{
+		ConfigPath: path,
+		Overrides: Overrides{
+			NetworkInterface:   &interfaceOverride,
+			NetworkRequirement: &requirementOverride,
+			StandaloneEnabled:  &standaloneOverride,
+			ListenerPort:       &portOverride,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Network.Interface != "from-cli" {
+		t.Errorf("Interface = %q", resolved.Network.Interface)
+	}
+	if resolved.Network.Requirement != connectivity.RequirementLocal {
+		t.Errorf("Requirement = %q", resolved.Network.Requirement)
+	}
+	if !resolved.Network.StandaloneEnabled {
+		t.Error("StandaloneEnabled = false")
+	}
+	if resolved.Portal.ListenerPort != 18003 {
+		t.Errorf("ListenerPort = %d", resolved.Portal.ListenerPort)
+	}
+}
+
+func TestResolveAllowsOverrideToRepairFileCombination(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(`
+schema_version = 1
+
+[network]
+infrastructure_enabled = false
+standalone_enabled = false
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	standaloneEnabled := true
+	resolved, err := Resolve(ResolveOptions{
+		ConfigPath: path,
+		Overrides:  Overrides{StandaloneEnabled: &standaloneEnabled},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if !resolved.Network.StandaloneEnabled {
+		t.Fatal("override did not repair the final mode combination")
+	}
+}
+
+func TestResolveUsesDefaultsWhenOptionalFileIsMissing(t *testing.T) {
+	resolved, err := Resolve(ResolveOptions{
+		ConfigPath:     filepath.Join(t.TempDir(), "missing.toml"),
+		ConfigOptional: true,
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Network.Interface != "wlan0" {
+		t.Fatalf("Interface = %q", resolved.Network.Interface)
+	}
+}
+
+func decodeForTest(reader io.Reader) (Config, error) {
+	resolved := Defaults()
+	if err := decodeInto(reader, &resolved); err != nil {
+		return Config{}, err
+	}
+	if err := resolved.Validate(); err != nil {
+		return Config{}, err
+	}
+	return resolved, nil
 }

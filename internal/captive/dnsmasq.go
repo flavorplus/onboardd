@@ -38,10 +38,10 @@ func NewDNSConfigFile(path string) (*DNSConfigFile, error) {
 	return &DNSConfigFile{path: filepath.Clean(path)}, nil
 }
 
-// RenderDNSMasqConfig returns a closed wildcard DNS policy. local=/#/ prevents
+// renderDNSMasqConfig returns a closed wildcard DNS policy. local=/#/ prevents
 // dnsmasq 2.86 and newer from forwarding non-A queries that address=/#/... cannot
 // answer locally.
-func RenderDNSMasqConfig(address netip.Addr) (string, error) {
+func renderDNSMasqConfig(address netip.Addr) (string, error) {
 	if !address.IsValid() || !address.Is4() || address.IsUnspecified() || address.IsMulticast() {
 		return "", errors.New("captive DNS address must be a usable IPv4 address")
 	}
@@ -54,7 +54,7 @@ func RenderDNSMasqConfig(address netip.Addr) (string, error) {
 
 // Install atomically creates or replaces the configured fragment.
 func (config *DNSConfigFile) Install(address netip.Addr) error {
-	contents, err := RenderDNSMasqConfig(address)
+	contents, err := renderDNSMasqConfig(address)
 	if err != nil {
 		return err
 	}

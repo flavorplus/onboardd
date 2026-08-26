@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	appconfig "github.com/flavorplus/onboardd/internal/config"
-	"github.com/flavorplus/onboardd/internal/handoff"
 )
 
 func TestOptionsFromRenderedConfiguration(t *testing.T) {
@@ -63,14 +62,14 @@ func TestAPISetupIncludesConfiguredBranding(t *testing.T) {
 }
 
 func TestAPISetupIncludesBrowserSafeHandoff(t *testing.T) {
-	info := handoff.Info{
+	info := Handoff{
 		SetupURL:                  "http://inkypi.local:18080/",
-		Application:               &handoff.Application{Label: "Open InkyPi", URL: "http://inkypi.local/"},
+		Application:               &ApplicationHandoff{Label: "Open InkyPi", URL: "http://inkypi.local/"},
 		HealthCheckURL:            "http://127.0.0.1/health",
 		ShowStandaloneCredentials: true,
 	}
 	api, _, _ := newTestAPIWithOptions(t, Options{
-		Branding:      DefaultBranding(),
+		Branding:      defaultBranding(),
 		Handoff:       &info,
 		HealthChecker: fixedReadiness(true),
 	})
@@ -97,13 +96,13 @@ func TestAPISetupIncludesBrowserSafeHandoff(t *testing.T) {
 }
 
 func TestAPISetupGatesUnhealthyApplicationURL(t *testing.T) {
-	info := handoff.Info{
+	info := Handoff{
 		SetupURL:       "http://inkypi.local:18080/",
-		Application:    &handoff.Application{Label: "Open InkyPi", URL: "http://inkypi.local/"},
+		Application:    &ApplicationHandoff{Label: "Open InkyPi", URL: "http://inkypi.local/"},
 		HealthCheckURL: "http://127.0.0.1/health",
 	}
 	api, _, _ := newTestAPIWithOptions(t, Options{
-		Branding:      DefaultBranding(),
+		Branding:      defaultBranding(),
 		Handoff:       &info,
 		HealthChecker: fixedReadiness(false),
 	})
@@ -121,12 +120,12 @@ func TestAPISetupGatesUnhealthyApplicationURL(t *testing.T) {
 }
 
 func TestAPISetupExposesStandaloneHandoffBeforeTransition(t *testing.T) {
-	info := handoff.Info{
+	info := Handoff{
 		SetupURL:                  "http://inkypi.local:18080/",
-		Standalone:                &handoff.Standalone{SSID: "InkyPi-AB12CD34", Password: "private-password"},
+		Standalone:                &StandaloneHandoff{SSID: "InkyPi-AB12CD34", Password: "private-password"},
 		ShowStandaloneCredentials: true,
 	}
-	api, _, _ := newTestAPIWithOptions(t, Options{Branding: DefaultBranding(), Handoff: &info})
+	api, _, _ := newTestAPIWithOptions(t, Options{Branding: defaultBranding(), Handoff: &info})
 
 	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	response := httptest.NewRecorder()
@@ -141,11 +140,11 @@ func TestAPISetupExposesStandaloneHandoffBeforeTransition(t *testing.T) {
 }
 
 func TestAPISetupHonorsStandaloneCredentialPolicy(t *testing.T) {
-	info := handoff.Info{
+	info := Handoff{
 		SetupURL:   "http://inkypi.local:18080/",
-		Standalone: &handoff.Standalone{SSID: "InkyPi-AB12CD34", Password: "private-password"},
+		Standalone: &StandaloneHandoff{SSID: "InkyPi-AB12CD34", Password: "private-password"},
 	}
-	api, _, _ := newTestAPIWithOptions(t, Options{Branding: DefaultBranding(), Handoff: &info})
+	api, _, _ := newTestAPIWithOptions(t, Options{Branding: defaultBranding(), Handoff: &info})
 	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	response := httptest.NewRecorder()
 	api.ServeHTTP(response, request)
@@ -162,11 +161,11 @@ func TestConfiguredLogoIsServedWithRestrictedPolicy(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#123456"/></svg>`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	logo, err := LoadLogo(path)
+	logo, err := loadLogo(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	api, _, _ := newTestAPIWithOptions(t, Options{Branding: DefaultBranding(), Logo: logo})
+	api, _, _ := newTestAPIWithOptions(t, Options{Branding: defaultBranding(), Logo: logo})
 
 	setupRequest := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	setupResponse := httptest.NewRecorder()
@@ -197,8 +196,8 @@ func TestLoadLogoRejectsActiveSVG(t *testing.T) {
 		if err := os.WriteFile(path, []byte(svg), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := LoadLogo(path); err == nil {
-			t.Fatalf("LoadLogo() accepted %s", svg)
+		if _, err := loadLogo(path); err == nil {
+			t.Fatalf("loadLogo() accepted %s", svg)
 		}
 	}
 }
@@ -209,7 +208,7 @@ func TestLoadLogoRejectsCorruptRasterImage(t *testing.T) {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadLogo(path); err == nil || !strings.Contains(err.Error(), "decode branding logo") {
+	if _, err := loadLogo(path); err == nil || !strings.Contains(err.Error(), "decode branding logo") {
 		t.Fatalf("error = %v", err)
 	}
 }

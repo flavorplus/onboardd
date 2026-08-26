@@ -39,11 +39,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
+      - name: Scan frontend runtime dependencies
+        run: npm audit --prefix frontend --omit=dev --audit-level=high
+
       - name: Test and build frontend
         run: |
           npm test --prefix frontend
           npm run build --prefix frontend
-          git diff --exit-code -- internal/frontend/dist
+          git diff --exit-code -- internal/web/dist
 
       - name: Test Go with race detection
         run: go test -race -shuffle=on ./...
@@ -59,8 +62,6 @@ jobs:
       - name: Check shell syntax
         run: |
           bash -n \
-            scripts/setup-recorder.sh \
-            scripts/dbus-trace-recorder.sh \
             scripts/build-release.sh \
             scripts/build-deb.sh \
             scripts/check-deb.sh

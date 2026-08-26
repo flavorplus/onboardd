@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
     build: {
       // The production binary embeds this directory. Keeping the build output beside
       // the Go wrapper makes a fresh checkout buildable without a runtime asset copy.
-      outDir: "../internal/frontend/dist",
+      outDir: "../internal/web/dist",
       emptyOutDir: true,
       target: "es2020",
       rollupOptions: {
