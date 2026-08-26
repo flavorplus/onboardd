@@ -45,8 +45,62 @@ async function start(): Promise<void> {
     }
     showModeChoice();
   } catch (error) {
+    if (showLoginIfRequired(error)) return;
     showLoadFailure(error);
   }
+}
+
+function showLogin(): void {
+  viewRevision += 1;
+  const shell = element("section", "setup-shell");
+  const header = element("header", "setup-header");
+  const wordmark = element("div", "wordmark");
+  wordmark.append(wirelessMark(), textElement("span", "Device setup"));
+  header.append(wordmark);
+
+  const content = element("div", "setup-content");
+  content.append(
+    textElement("p", "Administrator access", "eyebrow"),
+    textElement("h1", "Unlock network setup"),
+    textElement(
+      "p",
+      "Enter the administrator password to view or change this device’s network settings.",
+      "lede",
+    ),
+  );
+  const form = element("form", "form-stack") as HTMLFormElement;
+  const password = inputField("Administrator password", "password", "password", "", "");
+  password.input.autocomplete = "current-password";
+  password.input.maxLength = 256;
+  const errorSlot = element("div", "form-error");
+  errorSlot.setAttribute("role", "alert");
+  form.append(password.wrapper, errorSlot, submitButton("Unlock setup"));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    errorSlot.replaceChildren();
+    const submit = form.querySelector<HTMLButtonElement>("button[type=submit]");
+    if (submit) submit.disabled = true;
+    try {
+      await api.login(password.input.value);
+      password.input.value = "";
+      await start();
+    } catch (error) {
+      password.input.value = "";
+      if (submit) submit.disabled = false;
+      errorSlot.append(textElement("p", messageFrom(error)));
+      password.input.focus();
+    }
+  });
+  content.append(form, helpText("The password is stored only on this device."));
+  shell.append(header, content);
+  app.replaceChildren(shell);
+  password.input.focus();
+}
+
+function showLoginIfRequired(error: unknown): boolean {
+  if (!(error instanceof APIError) || error.code !== "authentication_required") return false;
+  showLogin();
+  return true;
 }
 
 function frame(options: {
@@ -186,6 +240,7 @@ async function showNetworks(): Promise<void> {
     content.append(list, actions);
   } catch (error) {
     status.remove();
+    if (showLoginIfRequired(error)) return;
     showInlineError(content, messageFrom(error), () => void showNetworks());
   }
 }
@@ -221,6 +276,7 @@ async function showKnownNetworks(successMessage?: string): Promise<void> {
     );
   } catch (error) {
     status.remove();
+    if (showLoginIfRequired(error)) return;
     showInlineError(content, messageFrom(error), () => void showKnownNetworks());
   }
 }
@@ -288,6 +344,7 @@ function showKnownNetworkConfirmation(network: KnownNetwork): void {
     try {
       await monitorOperation(await api.connectKnownNetwork(network.uuid));
     } catch (error) {
+      if (showLoginIfRequired(error)) return;
       connect.disabled = false;
       errorSlot.append(textElement("p", messageFrom(error)));
     }
@@ -325,6 +382,7 @@ function showForgetNetworkConfirmation(network: KnownNetwork): void {
       await api.forgetKnownNetwork(network.uuid);
       await showKnownNetworks(`${network.ssid} was forgotten.`);
     } catch (error) {
+      if (showLoginIfRequired(error)) return;
       forget.disabled = false;
       errorSlot.append(textElement("p", messageFrom(error)));
     }
@@ -430,6 +488,7 @@ function showCredentials(network: Network, hidden: boolean): void {
       if (password) password.input.value = "";
       await monitorOperation(operation);
     } catch (error) {
+      if (showLoginIfRequired(error)) return;
       if (submit) submit.disabled = false;
       errorSlot.append(textElement("p", messageFrom(error)));
     }
@@ -455,6 +514,7 @@ function showStandaloneConfirmation(): void {
     try {
       await monitorOperation(await api.standalone());
     } catch (error) {
+      if (showLoginIfRequired(error)) return;
       confirm.disabled = false;
       showInlineError(content, messageFrom(error), showStandaloneConfirmation);
     }
@@ -495,7 +555,12 @@ async function monitorOperation(initial: Operation): Promise<void> {
 
   for (;;) {
     if (operation.state === "succeeded") {
-      await refreshHandoff();
+      try {
+        await refreshHandoff();
+      } catch (error) {
+        if (showLoginIfRequired(error)) return;
+        throw error;
+      }
       showComplete(operation);
       return;
     }
@@ -507,7 +572,8 @@ async function monitorOperation(initial: Operation): Promise<void> {
     try {
       operation = await api.operation(operation.id);
       status.textContent = "Applying your choice…";
-    } catch {
+    } catch (error) {
+      if (showLoginIfRequired(error)) return;
       status.textContent = "Waiting for the device to come back…";
     }
   }
@@ -525,7 +591,8 @@ async function refreshHandoff(): Promise<void> {
   try {
     const refreshed = await api.bootstrap();
     bootstrap.handoff = refreshed.handoff;
-  } catch {
+  } catch (error) {
+    if (authenticationRequired(error)) throw error;
     // The stable origin may still be reconnecting. The completion view continues
     // polling and must not expose a destination whose health could not be confirmed.
   }
@@ -696,11 +763,16 @@ async function waitForApplication(
       status.textContent = application
         ? `${application.label} is still starting…`
         : "The application destination is not configured.";
-    } catch {
+    } catch (error) {
       if (revision !== viewRevision) return;
+      if (showLoginIfRequired(error)) return;
       status.textContent = "Waiting for the device application…";
     }
   }
+}
+
+function authenticationRequired(error: unknown): boolean {
+  return error instanceof APIError && error.code === "authentication_required";
 }
 
 function normalBrowserHandoff(): HTMLElement | undefined {

@@ -4,6 +4,8 @@ import type { Plugin } from "vite";
 import { MockDevice, type MockBrand, type MockModePolicy, rejectedMockPassword } from "./mock-device.ts";
 
 const mockLogo = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="12" fill="#2b6f69"/><path d="M13 25c7-8 15-11 22-8-2 9-8 16-19 18 4-3 7-6 9-10-4 3-8 5-12 5z" fill="#fff"/></svg>`;
+const mockAdminPassword = "onboardd-admin";
+const mockSessionToken = "local-preview-session";
 
 export function mockSetupAPI(policy: MockModePolicy, brand: MockBrand = "default"): Plugin {
   const device = new MockDevice(policy, brand);
@@ -12,12 +14,45 @@ export function mockSetupAPI(policy: MockModePolicy, brand: MockBrand = "default
     apply: "serve",
     configureServer(server) {
       server.config.logger.info(
-        `Local onboardd simulation: ${policy}; use “${rejectedMockPassword}” to reject a Wi-Fi attempt.`,
+        `Local onboardd simulation: ${policy}; admin password “${mockAdminPassword}”; use “${rejectedMockPassword}” to reject a Wi-Fi attempt.`,
       );
       server.middlewares.use(async (request, response, next) => {
         const url = new URL(request.url ?? "/", "http://127.0.0.1");
         if (!url.pathname.startsWith("/api/")) {
           next();
+          return;
+        }
+        if (request.method === "POST" && url.pathname === "/api/v1/session") {
+          try {
+            const body = await readJSON(request);
+            if (!isPassword(body, mockAdminPassword)) {
+              sendJSON(response, 401, {
+                error: {
+                  code: "authentication_failed",
+                  message: "The administrator password is incorrect.",
+                },
+              });
+              return;
+            }
+            response.setHeader(
+              "Set-Cookie",
+              `onboardd_session=${mockSessionToken}; Path=/api/v1/; HttpOnly; SameSite=Strict`,
+            );
+            sendJSON(response, 200, { authenticated: true });
+          } catch {
+            sendJSON(response, 400, {
+              error: { code: "invalid_json", message: "The request could not be understood." },
+            });
+          }
+          return;
+        }
+        if (!hasSession(request)) {
+          sendJSON(response, 401, {
+            error: {
+              code: "authentication_required",
+              message: "Enter the administrator password to continue.",
+            },
+          });
           return;
         }
         if (
@@ -48,6 +83,17 @@ export function mockSetupAPI(policy: MockModePolicy, brand: MockBrand = "default
       });
     },
   };
+}
+
+function isPassword(body: unknown, password: string): boolean {
+  return typeof body === "object" && body !== null &&
+    "password" in body && body.password === password;
+}
+
+function hasSession(request: IncomingMessage): boolean {
+  return (request.headers.cookie ?? "")
+    .split(";")
+    .some((cookie) => cookie.trim() === `onboardd_session=${mockSessionToken}`);
 }
 
 async function readJSON(request: IncomingMessage): Promise<unknown> {

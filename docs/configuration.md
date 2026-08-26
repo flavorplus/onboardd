@@ -86,11 +86,14 @@ rules. Passwords never belong in TOML or command arguments.
 ```toml
 [portal]
 listener_port = 18080
+password_file = "/etc/onboardd/admin-password"
 ```
 
 Port 80 is reserved for captive detection and redirection. The private listener port
 must be different. The setup URL uses the host's existing Avahi name, for example
-`http://display.local:18080/`.
+`http://display.local:18080/`. The password file unlocks the in-app administrator
+login and must contain 12–256 bytes without line breaks or NUL bytes. It follows the
+same root-only regular-file rules as the access-point password files.
 
 ### Application handoff
 
@@ -104,7 +107,8 @@ show_standalone_credentials = false
 
 The label and application URL are optional but must be configured together. A health
 check is optional and gates display of the application link. The standalone password
-is returned to the browser only when `show_standalone_credentials` is true.
+is returned to an authenticated browser only when `show_standalone_credentials` is
+true.
 
 ## Templates
 

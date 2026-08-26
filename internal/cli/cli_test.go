@@ -80,6 +80,7 @@ func TestManagedApplianceValidatesProfilesBeforeDBus(t *testing.T) {
 		Band:                "bg",
 		PublicHTTPPort:      80,
 		ListenerHTTPPort:    18080,
+		AdminPassword:       "test-admin-password",
 		Assets:              fstest.MapFS{"index.html": {Data: []byte("compiled")}},
 		NetworkEnabled:      true,
 	}, &bytes.Buffer{}, nil, nil)
@@ -110,9 +111,10 @@ func TestReadSecurePasswordFilePermissions(t *testing.T) {
 
 func TestSetupOptionsUseRenderedConfigAndEmbeddedAssets(t *testing.T) {
 	directory := t.TempDir()
+	adminPassword := filepath.Join(directory, "admin-password")
 	provisioningPassword := filepath.Join(directory, "provisioning-password")
 	standalonePassword := filepath.Join(directory, "standalone-password")
-	for _, path := range []string{provisioningPassword, standalonePassword} {
+	for _, path := range []string{adminPassword, provisioningPassword, standalonePassword} {
 		if err := os.WriteFile(path, []byte("test-password\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -120,6 +122,7 @@ func TestSetupOptionsUseRenderedConfigAndEmbeddedAssets(t *testing.T) {
 	configured := appconfig.Defaults()
 	configured.Product.Name = "InkyPi"
 	configured.Network.Interface = "wlan-test"
+	configured.Portal.PasswordFile = adminPassword
 	configured.Network.Provisioning.PasswordFile = provisioningPassword
 	configured.Network.Standalone.PasswordFile = standalonePassword
 	configured.Handoff.ShowStandaloneCredentials = true
@@ -143,6 +146,9 @@ func TestSetupOptionsUseRenderedConfigAndEmbeddedAssets(t *testing.T) {
 	}
 	if options.Branding.Branding.ProductName != "InkyPi" || options.ProvisioningPSK != "test-password" {
 		t.Fatalf("branding or secret mapping = %+v", options)
+	}
+	if options.AdminPassword != "test-password" {
+		t.Fatalf("admin password was not loaded from its secure file")
 	}
 	if options.Branding.Handoff == nil || options.Branding.Handoff.SetupURL != "http://inkypi.local:19000/" {
 		t.Fatalf("handoff mapping = %+v", options.Branding.Handoff)

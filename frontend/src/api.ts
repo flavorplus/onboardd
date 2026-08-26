@@ -28,6 +28,13 @@ export class SetupAPI {
     this.requestTimeoutMilliseconds = requestTimeoutMilliseconds;
   }
 
+  async login(password: string): Promise<void> {
+    await this.request<{ authenticated: boolean }>("/api/v1/session", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+  }
+
   async bootstrap(): Promise<Bootstrap> {
     const result = await this.request<Bootstrap>("/api/v1/setup");
     this.csrfToken = result.csrf_token;
@@ -94,7 +101,7 @@ export class SetupAPI {
       headers.set("Content-Type", "application/json");
     }
     const method = (init.method ?? "GET").toUpperCase();
-    if (method !== "GET" && method !== "HEAD") {
+    if (method !== "GET" && method !== "HEAD" && this.csrfToken !== "") {
       headers.set("X-Onboardd-CSRF", this.csrfToken);
     }
     const controller = new AbortController();

@@ -155,6 +155,10 @@ func setupOptionsFromConfig(resolved appconfig.Config, hostname string) (setupOp
 	if err != nil {
 		return setupOptions{}, err
 	}
+	adminPassword, err := readSecurePasswordFile(resolved.Portal.PasswordFile)
+	if err != nil {
+		return setupOptions{}, fmt.Errorf("admin password: %w", err)
+	}
 	portalPassword, err := readSecurePasswordFile(resolved.Network.Provisioning.PasswordFile)
 	if err != nil {
 		return setupOptions{}, fmt.Errorf("provisioning password: %w", err)
@@ -190,6 +194,7 @@ func setupOptionsFromConfig(resolved appconfig.Config, hostname string) (setupOp
 		ListenerHTTPPort:    resolved.Portal.ListenerPort,
 		PortalURL:           canonicalURL,
 		PortalOrigin:        origin,
+		AdminPassword:       adminPassword,
 		DNSConfigPath:       defaultDNSConfigPath,
 		Assets:              webui.Assets(),
 		Branding:            branding,
@@ -218,6 +223,7 @@ type setupOptions struct {
 	ListenerHTTPPort    uint16
 	PortalURL           string
 	PortalOrigin        string
+	AdminPassword       string
 	DNSConfigPath       string
 	Assets              fs.FS
 	Branding            webui.Options
@@ -236,6 +242,9 @@ type setupOptions struct {
 }
 
 func validateSetupOptions(options setupOptions) error {
+	if err := webui.ValidateAdminPassword(options.AdminPassword); err != nil {
+		return err
+	}
 	if _, _, err := networkmanager.BuildAccessPointSettings(networkmanager.AccessPointOptions{
 		Interface: options.Interface,
 		SSID:      options.ProvisioningSSID,

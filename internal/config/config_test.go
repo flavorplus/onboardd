@@ -131,6 +131,18 @@ listener_port = 80
 	}
 }
 
+func TestDecodeRejectsEmptyAdminPasswordFile(t *testing.T) {
+	_, err := decodeForTest(strings.NewReader(`
+schema_version = 1
+
+[portal]
+password_file = ""
+`))
+	if err == nil || !strings.Contains(err.Error(), "portal.password_file") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestDecodeRejectsIncompleteApplicationHandoff(t *testing.T) {
 	_, err := decodeForTest(strings.NewReader(`
 schema_version = 1

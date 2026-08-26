@@ -34,6 +34,8 @@ address = "10.42.0.1/24"
 [portal]
 # Port 80 remains the fixed captive-portal endpoint; this is the private UI listener.
 listener_port = 18080
+# Root-only file containing the administrator password for the setup UI.
+password_file = "/etc/onboardd/admin-password"
 
 [handoff]
 # Configure application_label and application_url together to link to the product app.

@@ -4,6 +4,7 @@ package web
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -14,14 +15,37 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/flavorplus/onboardd/internal/setup"
 )
 
 const (
-	apiBodyLimit = 4096
-	csrfHeader   = "X-Onboardd-CSRF"
+	apiBodyLimit      = 4096
+	csrfHeader        = "X-Onboardd-CSRF"
+	sessionCookieName = "onboardd_session"
+	failedLoginDelay  = 350 * time.Millisecond
+	minAdminPassword  = 12
+	maxAdminPassword  = 256
 )
+
+// Authentication contains the administrator secret used to unlock the setup API.
+type Authentication struct {
+	Password string
+}
+
+// ValidateAdminPassword checks the runtime password policy without retaining the
+// secret. The password itself belongs in a root-only file, never in TOML.
+func ValidateAdminPassword(password string) error {
+	length := len([]byte(password))
+	if length < minAdminPassword || length > maxAdminPassword {
+		return fmt.Errorf("admin password must be between %d and %d bytes", minAdminPassword, maxAdminPassword)
+	}
+	if strings.ContainsAny(password, "\r\n\x00") {
+		return errors.New("admin password must not contain line breaks or NUL bytes")
+	}
+	return nil
+}
 
 type setupService interface {
 	Bootstrap(context.Context) (setup.Bootstrap, error)
@@ -41,6 +65,8 @@ type API struct {
 	service         setupService
 	canonicalOrigin string
 	csrfToken       string
+	passwordDigest  [sha256.Size]byte
+	sessionToken    string
 	branding        brandingResponse
 	handoff         *Handoff
 	healthChecker   readinessChecker
@@ -49,9 +75,17 @@ type API struct {
 }
 
 // NewAPI validates the portal origin and creates an isolated v1 handler.
-func NewAPI(service setupService, canonicalOrigin string, options ...Options) (*API, error) {
+func NewAPI(
+	service setupService,
+	canonicalOrigin string,
+	authentication Authentication,
+	options ...Options,
+) (*API, error) {
 	if service == nil {
 		return nil, errors.New("setup service is required")
+	}
+	if err := ValidateAdminPassword(authentication.Password); err != nil {
+		return nil, err
 	}
 	origin, err := normalizeOrigin(canonicalOrigin)
 	if err != nil {
@@ -61,20 +95,27 @@ func NewAPI(service setupService, canonicalOrigin string, options ...Options) (*
 	if err != nil {
 		return nil, err
 	}
-	tokenBytes := make([]byte, 32)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return nil, fmt.Errorf("generate setup CSRF token: %w", err)
+	csrfToken, err := randomToken("setup CSRF")
+	if err != nil {
+		return nil, err
+	}
+	sessionToken, err := randomToken("setup session")
+	if err != nil {
+		return nil, err
 	}
 	api := &API{
 		service:         service,
 		canonicalOrigin: origin,
-		csrfToken:       hex.EncodeToString(tokenBytes),
+		csrfToken:       csrfToken,
+		passwordDigest:  sha256.Sum256([]byte(authentication.Password)),
+		sessionToken:    sessionToken,
 		branding:        branding,
 		handoff:         handoffInfo,
 		healthChecker:   healthChecker,
 		logo:            logo,
 		mux:             http.NewServeMux(),
 	}
+	api.mux.HandleFunc("POST /api/v1/session", api.postSession)
 	api.mux.HandleFunc("GET /api/v1/setup", api.getSetup)
 	api.mux.HandleFunc("GET /api/v1/branding/logo", api.getLogo)
 	api.mux.HandleFunc("GET /api/v1/networks", api.getNetworks)
@@ -86,6 +127,14 @@ func NewAPI(service setupService, canonicalOrigin string, options ...Options) (*
 	api.mux.HandleFunc("GET /api/v1/operations/{id}", api.getOperation)
 	api.mux.HandleFunc("/api/", api.notFound)
 	return api, nil
+}
+
+func randomToken(label string) (string, error) {
+	value := make([]byte, 32)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("generate %s token: %w", label, err)
+	}
+	return hex.EncodeToString(value), nil
 }
 
 func (api *API) notFound(response http.ResponseWriter, _ *http.Request) {
@@ -100,7 +149,66 @@ func (api *API) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	response.Header().Set("Cache-Control", "no-store")
 	response.Header().Set("X-Content-Type-Options", "nosniff")
 	response.Header().Set("Referrer-Policy", "no-referrer")
+	if request.Method != http.MethodPost || request.URL.Path != "/api/v1/session" {
+		if !api.allowSession(response, request) {
+			return
+		}
+	}
 	api.mux.ServeHTTP(response, request)
+}
+
+type sessionPayload struct {
+	Password string `json:"password"`
+}
+
+func (api *API) postSession(response http.ResponseWriter, request *http.Request) {
+	if !api.allowOrigin(response, request) {
+		return
+	}
+	var payload sessionPayload
+	if !decodeJSON(response, request, &payload) {
+		return
+	}
+	provided := sha256.Sum256([]byte(payload.Password))
+	if subtle.ConstantTimeCompare(provided[:], api.passwordDigest[:]) != 1 {
+		timer := time.NewTimer(failedLoginDelay)
+		defer timer.Stop()
+		select {
+		case <-request.Context().Done():
+			return
+		case <-timer.C:
+		}
+		writeError(response, http.StatusUnauthorized, setup.Failure{
+			Code:    "authentication_failed",
+			Message: "The administrator password is incorrect.",
+		})
+		return
+	}
+	http.SetCookie(response, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    api.sessionToken,
+		Path:     "/api/v1/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+	writeJSON(response, http.StatusOK, struct {
+		Authenticated bool `json:"authenticated"`
+	}{Authenticated: true})
+}
+
+func (api *API) allowSession(response http.ResponseWriter, request *http.Request) bool {
+	cookie, err := request.Cookie(sessionCookieName)
+	if err == nil && len(cookie.Value) == len(api.sessionToken) && subtle.ConstantTimeCompare(
+		[]byte(cookie.Value),
+		[]byte(api.sessionToken),
+	) == 1 {
+		return true
+	}
+	writeError(response, http.StatusUnauthorized, setup.Failure{
+		Code:    "authentication_required",
+		Message: "Enter the administrator password to continue.",
+	})
+	return false
 }
 
 type setupResponse struct {
@@ -371,17 +479,23 @@ func (api *API) allowMutation(response http.ResponseWriter, request *http.Reques
 		})
 		return false
 	}
-	if origin := request.Header.Get("Origin"); origin != "" {
-		normalized, err := normalizeOrigin(origin)
-		if err != nil || (normalized != api.canonicalOrigin && normalized != requestOrigin(request)) {
-			writeError(response, http.StatusForbidden, setup.Failure{
-				Code:    "request_not_allowed",
-				Message: "Refresh the setup page and try again.",
-			})
-			return false
-		}
+	return api.allowOrigin(response, request)
+}
+
+func (api *API) allowOrigin(response http.ResponseWriter, request *http.Request) bool {
+	origin := request.Header.Get("Origin")
+	if origin == "" {
+		return true
 	}
-	return true
+	normalized, err := normalizeOrigin(origin)
+	if err == nil && (normalized == api.canonicalOrigin || normalized == requestOrigin(request)) {
+		return true
+	}
+	writeError(response, http.StatusForbidden, setup.Failure{
+		Code:    "request_not_allowed",
+		Message: "Refresh the setup page and try again.",
+	})
+	return false
 }
 
 func requestOrigin(request *http.Request) string {

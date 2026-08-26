@@ -111,6 +111,9 @@ inspect NetworkManager state.
 | C09 | Delete the active infrastructure profile externally | Reconciliation enters provisioning when no usable selected mode remains |
 | C10 | Reboot in infrastructure, standalone, and provisioning recovery | Each state reconciles to its intended result |
 | C11 | Repeat infrastructure → standalone → infrastructure five times | No duplicate owned profiles or stale captive resources accumulate |
+| C12 | Open setup without a session, then log in | Every API route first returns `401`; the correct admin password unlocks the UI |
+| C13 | Try an incorrect admin password | Login fails without creating a session; the correct password still works afterward |
+| C14 | Restart onboardd while setup is open | The old session is rejected and the UI asks for the admin password again |
 
 After each scenario, retain these credential-free observations:
 
@@ -143,7 +146,7 @@ Run the package lifecycle on at least one ARM64 Pi and the AMD64 environment:
 1. fresh install remains disabled and inactive;
 2. enabling starts the configured service;
 3. upgrade restarts only an already-active service;
-4. downgrade restores the older binary and preserves configuration, secrets, and
+4. downgrade restores the older binary and preserves configuration, admin/access-point secrets, and
    profiles;
 5. removal preserves configuration, secrets, and profiles;
 6. reinstall restores the service without changing retained files;

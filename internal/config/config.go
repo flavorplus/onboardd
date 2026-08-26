@@ -82,6 +82,7 @@ type Standalone struct {
 
 type Portal struct {
 	ListenerPort uint16 `toml:"listener_port"`
+	PasswordFile string `toml:"password_file"`
 }
 
 // Handoff configures the optional product application destination. The stable setup
@@ -186,7 +187,10 @@ func Defaults() Config {
 				Address:      "10.42.0.1/24",
 			},
 		},
-		Portal:  Portal{ListenerPort: 18080},
+		Portal: Portal{
+			ListenerPort: 18080,
+			PasswordFile: "/etc/onboardd/admin-password",
+		},
 		Handoff: Handoff{},
 	}
 }
@@ -300,6 +304,9 @@ func validatePortal(portal Portal) error {
 	}
 	if portal.ListenerPort == CaptivePublicPort {
 		return fmt.Errorf("portal.listener_port must differ from the fixed captive public port %d", CaptivePublicPort)
+	}
+	if strings.TrimSpace(portal.PasswordFile) == "" {
+		return errors.New("portal.password_file must not be empty")
 	}
 	return nil
 }

@@ -42,14 +42,16 @@ arguments:
 
 ```bash
 sudo install -d -m 0750 -o root -g root /etc/onboardd
+sudo install -m 0600 -o root -g root /dev/null /etc/onboardd/admin-password
 sudo install -m 0600 -o root -g root /dev/null /etc/onboardd/provisioning-password
 sudo install -m 0600 -o root -g root /dev/null /etc/onboardd/standalone-password
+sudoedit /etc/onboardd/admin-password
 sudoedit /etc/onboardd/provisioning-password
 sudoedit /etc/onboardd/standalone-password
 ```
 
-Use 8–63 character WPA passphrases and keep one trailing newline at most. Validate
-file ownership and mode:
+Use a unique 12–256 byte administrator password and 8–63 character WPA passphrases.
+Keep one trailing newline at most. Validate file ownership and mode:
 
 ```bash
 stat -c '%U %G %a %n' /etc/onboardd /etc/onboardd/*
@@ -57,6 +59,12 @@ stat -c '%U %G %a %n' /etc/onboardd /etc/onboardd/*
 
 The directory should be `root:root 750`, the TOML conffile `root:root 640`, and password
 files `root:root 600`.
+
+The setup frontend is public static content, but every API endpoint other than login
+requires the administrator session. Login uses a styled in-app form rather than the
+browser's native Basic Authentication prompt. The session ends when the browser closes
+or onboardd restarts. Because captive setup uses HTTP, this protects against casual
+unauthorized changes on a shared LAN but does not encrypt credentials in transit.
 
 ## Start and recover
 
@@ -86,6 +94,11 @@ sudo nft list ruleset
 ```
 
 ## Upgrade and rollback
+
+Before upgrading an already running pre-authentication installation, create
+`/etc/onboardd/admin-password` with mode `0600`. The default applies even when an older
+TOML conffile does not yet contain `portal.password_file`; without the file, the
+restarted service deliberately fails closed.
 
 Install a newer package with `apt install ./PACKAGE.deb`. If the service was active,
 the package reloads systemd and restarts it; an intentionally inactive service remains

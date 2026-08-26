@@ -137,7 +137,12 @@ func runManagedAppliance(
 			options.RestorationWait+applianceCleanupTimeout,
 		)
 	}
-	api, err := webui.NewAPI(service, options.PortalOrigin, options.Branding)
+	api, err := webui.NewAPI(
+		service,
+		options.PortalOrigin,
+		webui.Authentication{Password: options.AdminPassword},
+		options.Branding,
+	)
 	if err != nil {
 		return err
 	}

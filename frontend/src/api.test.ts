@@ -3,6 +3,27 @@ import test from "node:test";
 
 import { SetupAPI } from "./api.ts";
 
+test("login sends the administrator password without a CSRF header", async () => {
+  const originalFetch = globalThis.fetch;
+  let loginObserved = false;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(String(input), "/api/v1/session");
+    assert.equal(init?.method, "POST");
+    assert.equal(new Headers(init?.headers).get("X-Onboardd-CSRF"), null);
+    assert.deepEqual(JSON.parse(String(init?.body)), { password: "admin-password" });
+    assert.equal(init?.credentials, "same-origin");
+    loginObserved = true;
+    return Response.json({ authenticated: true });
+  }) as typeof fetch;
+
+  try {
+    await new SetupAPI().login("admin-password");
+    assert.equal(loginObserved, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("a stalled request is aborted so operation polling can retry", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) =>

@@ -16,6 +16,7 @@ daemon.
 - Keeps infrastructure and standalone access-point profiles as durable modes.
 - Protects network changes with NetworkManager checkpoints and exact-profile rollback.
 - Serves a framework-free setup UI embedded in the Go binary.
+- Protects every setup API route with an in-app administrator session.
 - Lets users connect to, activate, or forget onboardd-owned Wi-Fi profiles.
 - Leaves foreign/system-managed profiles visible but read-only.
 

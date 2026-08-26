@@ -15,14 +15,118 @@ import (
 	"github.com/flavorplus/onboardd/internal/setup"
 )
 
-const testOrigin = "http://10.42.0.1"
+const (
+	testOrigin        = "http://10.42.0.1"
+	testAdminPassword = "correct-admin-password"
+)
+
+func TestAPIRequiresAuthenticationForEveryPrivateRoute(t *testing.T) {
+	api, _, _ := newTestAPI(t)
+	for _, test := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/setup"},
+		{method: http.MethodGet, path: "/api/v1/branding/logo"},
+		{method: http.MethodGet, path: "/api/v1/networks"},
+		{method: http.MethodGet, path: "/api/v1/known-networks"},
+		{method: http.MethodDelete, path: "/api/v1/known-networks/example"},
+		{method: http.MethodPost, path: "/api/v1/known-networks/example/connect"},
+		{method: http.MethodPost, path: "/api/v1/connections"},
+		{method: http.MethodPost, path: "/api/v1/standalone"},
+		{method: http.MethodGet, path: "/api/v1/operations/example"},
+		{method: http.MethodGet, path: "/api/v1/missing"},
+	} {
+		t.Run(test.method+" "+test.path, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, testOrigin+test.path, nil)
+			response := httptest.NewRecorder()
+			api.ServeHTTP(response, request)
+			if response.Code != http.StatusUnauthorized ||
+				!strings.Contains(response.Body.String(), `"code":"authentication_required"`) {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestAPILoginCreatesPrivateBrowserSession(t *testing.T) {
+	api, _, _ := newTestAPI(t)
+	request := jsonRequest(
+		t,
+		http.MethodPost,
+		testOrigin+"/api/v1/session",
+		`{"password":"`+testAdminPassword+`"}`,
+		"",
+	)
+	request.Header.Set("Origin", testOrigin)
+	response := httptest.NewRecorder()
+	api.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("login response = %d %s", response.Code, response.Body.String())
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("cookies = %#v", cookies)
+	}
+	cookie := cookies[0]
+	if cookie.Name != sessionCookieName || cookie.Value == "" || cookie.Path != "/api/v1/" ||
+		!cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Secure {
+		t.Fatalf("session cookie = %#v", cookie)
+	}
+
+	setupRequest := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
+	setupRequest.AddCookie(cookie)
+	setupResponse := httptest.NewRecorder()
+	api.ServeHTTP(setupResponse, setupRequest)
+	if setupResponse.Code != http.StatusOK {
+		t.Fatalf("authenticated setup response = %d %s", setupResponse.Code, setupResponse.Body.String())
+	}
+}
+
+func TestAPILoginRejectsInvalidPasswordAndOrigin(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		password   string
+		origin     string
+		wantStatus int
+	}{
+		{name: "incorrect password", password: "incorrect-password", origin: testOrigin, wantStatus: http.StatusUnauthorized},
+		{name: "foreign origin", password: testAdminPassword, origin: "https://attacker.example", wantStatus: http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			api, _, _ := newTestAPI(t)
+			request := jsonRequest(
+				t,
+				http.MethodPost,
+				testOrigin+"/api/v1/session",
+				`{"password":"`+test.password+`"}`,
+				"",
+			)
+			request.Header.Set("Origin", test.origin)
+			response := httptest.NewRecorder()
+			api.ServeHTTP(response, request)
+			if response.Code != test.wantStatus {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestNewAPIRejectsWeakAdminPassword(t *testing.T) {
+	_, _, service := newTestAPI(t)
+	_, err := NewAPI(service, testOrigin, Authentication{Password: "short"})
+	if err == nil || !strings.Contains(err.Error(), "between 12 and 256") {
+		t.Fatalf("error = %v", err)
+	}
+}
 
 func TestAPISetupBootstrap(t *testing.T) {
 	api, _, _ := newTestAPI(t)
 	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	response := httptest.NewRecorder()
 
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -54,7 +158,7 @@ func TestAPIConnectionMutationAndOperation(t *testing.T) {
 	)
 	response := httptest.NewRecorder()
 
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -94,7 +198,7 @@ func TestAPIDoesNotBeginOperationWhenAcceptedResponseCannotFlush(t *testing.T) {
 		err:              errors.New("client disconnected"),
 	}
 
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 
 	backend.mu.Lock()
 	started := backend.started
@@ -130,7 +234,7 @@ func TestAPIDoesNotBeginOperationWhenAcceptedResponseCannotWrite(t *testing.T) {
 		err:              errors.New("client disconnected"),
 	}
 
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 
 	backend.mu.Lock()
 	started := backend.started
@@ -178,7 +282,7 @@ func TestAPIConnectionPreservesOpenAndHiddenChoices(t *testing.T) {
 			)
 			response := httptest.NewRecorder()
 
-			api.ServeHTTP(response, request)
+			serveAPI(t, api, response, request)
 
 			if response.Code != http.StatusAccepted {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -209,7 +313,7 @@ func TestAPIListsAndForgetsKnownNetwork(t *testing.T) {
 
 	listRequest := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/known-networks", nil)
 	listResponse := httptest.NewRecorder()
-	api.ServeHTTP(listResponse, listRequest)
+	serveAPI(t, api, listResponse, listRequest)
 	if listResponse.Code != http.StatusOK ||
 		!strings.Contains(listResponse.Body.String(), `"managed_by_onboardd":true`) {
 		t.Fatalf("list response = %d %s", listResponse.Code, listResponse.Body.String())
@@ -222,7 +326,7 @@ func TestAPIListsAndForgetsKnownNetwork(t *testing.T) {
 	)
 	deleteRequest.Header.Set(csrfHeader, bootstrapToken(t, api))
 	deleteResponse := httptest.NewRecorder()
-	api.ServeHTTP(deleteResponse, deleteRequest)
+	serveAPI(t, api, deleteResponse, deleteRequest)
 	if deleteResponse.Code != http.StatusOK {
 		t.Fatalf("delete response = %d %s", deleteResponse.Code, deleteResponse.Body.String())
 	}
@@ -245,7 +349,7 @@ func TestAPIConnectsKnownNetwork(t *testing.T) {
 	request.Header.Set(csrfHeader, bootstrapToken(t, api))
 	response := httptest.NewRecorder()
 
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -298,7 +402,7 @@ func TestAPIProtectsKnownNetworkActivation(t *testing.T) {
 				request.Header.Set(csrfHeader, bootstrapToken(t, api))
 			}
 			response := httptest.NewRecorder()
-			api.ServeHTTP(response, request)
+			serveAPI(t, api, response, request)
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 			}
@@ -342,7 +446,7 @@ func TestAPIProtectsKnownNetworkDeletion(t *testing.T) {
 				request.Header.Set(csrfHeader, bootstrapToken(t, api))
 			}
 			response := httptest.NewRecorder()
-			api.ServeHTTP(response, request)
+			serveAPI(t, api, response, request)
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 			}
@@ -375,7 +479,7 @@ func TestAPIMutationProtection(t *testing.T) {
 			)
 			request.Header.Set("Origin", test.origin)
 			response := httptest.NewRecorder()
-			api.ServeHTTP(response, request)
+			serveAPI(t, api, response, request)
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 			}
@@ -396,7 +500,7 @@ func TestAPIMutationAllowsDirectListenerOrigin(t *testing.T) {
 	request.Header.Set("Origin", "http://192.0.2.10:18080")
 	response := httptest.NewRecorder()
 
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -423,7 +527,7 @@ func TestAPIRejectsUnknownJSONAndLargeBodies(t *testing.T) {
 				bootstrapToken(t, api),
 			)
 			response := httptest.NewRecorder()
-			api.ServeHTTP(response, request)
+			serveAPI(t, api, response, request)
 			if response.Code != test.wantStatus {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 			}
@@ -442,7 +546,7 @@ func TestAPIReportsOperationConflict(t *testing.T) {
 		token,
 	)
 	firstResponse := httptest.NewRecorder()
-	api.ServeHTTP(firstResponse, firstRequest)
+	serveAPI(t, api, firstResponse, firstRequest)
 	if firstResponse.Code != http.StatusAccepted {
 		t.Fatalf("first status = %d", firstResponse.Code)
 	}
@@ -455,7 +559,7 @@ func TestAPIReportsOperationConflict(t *testing.T) {
 		token,
 	)
 	secondResponse := httptest.NewRecorder()
-	api.ServeHTTP(secondResponse, secondRequest)
+	serveAPI(t, api, secondResponse, secondRequest)
 	if secondResponse.Code != http.StatusConflict ||
 		!strings.Contains(secondResponse.Body.String(), "operation_in_progress") {
 		t.Fatalf("second status = %d, body = %s", secondResponse.Code, secondResponse.Body.String())
@@ -468,7 +572,7 @@ func TestAPIHidesBackendErrors(t *testing.T) {
 	backend.networkErr = errors.New("private NetworkManager path")
 	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/networks", nil)
 	response := httptest.NewRecorder()
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d", response.Code)
 	}
@@ -489,7 +593,7 @@ func TestAPIUnknownRouteReturnsJSON(t *testing.T) {
 		request := httptest.NewRequest(test.method, testOrigin+test.path, nil)
 		response := httptest.NewRecorder()
 
-		api.ServeHTTP(response, request)
+		serveAPI(t, api, response, request)
 
 		if response.Code != http.StatusNotFound ||
 			response.Header().Get("Content-Type") != "application/json; charset=utf-8" ||
@@ -514,18 +618,33 @@ func newTestAPIWithOptions(t *testing.T, options ...Options) (*API, *fakeAPIBack
 	if err != nil {
 		t.Fatal(err)
 	}
-	api, err := NewAPI(service, testOrigin, options...)
+	api, err := NewAPI(
+		service,
+		testOrigin,
+		Authentication{Password: testAdminPassword},
+		options...,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return api, backend, service
 }
 
+func serveAPI(t *testing.T, api *API, response http.ResponseWriter, request *http.Request) {
+	t.Helper()
+	request.AddCookie(&http.Cookie{
+		Name:  sessionCookieName,
+		Value: api.sessionToken,
+		Path:  "/api/v1/",
+	})
+	api.ServeHTTP(response, request)
+}
+
 func bootstrapToken(t *testing.T, api *API) string {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	response := httptest.NewRecorder()
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 	var body struct {
 		CSRFToken string `json:"csrf_token"`
 	}
@@ -559,7 +678,7 @@ func waitForAPIState(t *testing.T, api *API, id string, state setup.OperationSta
 	for {
 		request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/operations/"+id, nil)
 		response := httptest.NewRecorder()
-		api.ServeHTTP(response, request)
+		serveAPI(t, api, response, request)
 		var body struct {
 			Operation setup.Operation `json:"operation"`
 		}

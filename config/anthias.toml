@@ -30,6 +30,7 @@ address = "10.42.0.1/24"
 
 [portal]
 listener_port = 18080
+password_file = "/etc/onboardd/admin-password"
 
 [handoff]
 application_label = "Open Anthias"

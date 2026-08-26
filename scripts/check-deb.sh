@@ -227,9 +227,15 @@ if [[ -e $lifecycle_root/etc/NetworkManager/system-connections ]]; then
   fail 'maintainer scripts created a NetworkManager profile directory'
 fi
 
-secret="${lifecycle_root}/etc/onboardd/provisioning-password"
-install -m 0600 /dev/null "$secret"
-printf 'package-check-placeholder\n' >"$secret"
+secrets=(
+  "${lifecycle_root}/etc/onboardd/admin-password"
+  "${lifecycle_root}/etc/onboardd/provisioning-password"
+  "${lifecycle_root}/etc/onboardd/standalone-password"
+)
+for secret in "${secrets[@]}"; do
+  install -m 0600 /dev/null "$secret"
+  printf 'package-check-placeholder\n' >"$secret"
+done
 DPKG_ROOT="$lifecycle_root" "$lifecycle_control/prerm" upgrade
 DPKG_ROOT="$lifecycle_root" "$lifecycle_control/prerm" remove
 rm -- "${lifecycle_root}/etc/onboardd/config.toml"
@@ -237,10 +243,12 @@ PATH="${helper_root}:$PATH" \
   DPKG_ROOT="$lifecycle_root" \
   ONBOARDD_HELPER_LOG="$helper_log" \
   "$lifecycle_control/postrm" purge
-if [[ ! -f $secret ]]; then
-  fail 'purge removed an administrator-created password file'
-fi
-assert_equal 'preserved password mode' "$(stat -c '%a' "$secret")" 600
+for secret in "${secrets[@]}"; do
+  if [[ ! -f $secret ]]; then
+    fail "purge removed administrator-created password file ${secret##*/}"
+  fi
+  assert_equal "preserved password mode for ${secret##*/}" "$(stat -c '%a' "$secret")" 600
+done
 assert_equal 'systemd helper update count' \
   "$(awk '$0 == "update-state onboardd.service" { count++ } END { print count + 0 }' "$helper_log")" 2
 assert_equal 'systemd helper purge count' \

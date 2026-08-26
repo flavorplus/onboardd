@@ -36,6 +36,7 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5173`. The development server supplies a simulated setup API.
+Its administrator password is printed in the Vite startup output.
 Additional modes are available:
 
 ```bash

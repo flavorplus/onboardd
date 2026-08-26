@@ -45,7 +45,7 @@ func TestAPISetupIncludesConfiguredBranding(t *testing.T) {
 	api, _, _ := newTestAPIWithOptions(t, Options{Branding: branding})
 	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	response := httptest.NewRecorder()
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 
 	for _, expected := range []string{
 		`"product_name":"InkyPi"`,
@@ -75,7 +75,7 @@ func TestAPISetupIncludesBrowserSafeHandoff(t *testing.T) {
 	})
 	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	response := httptest.NewRecorder()
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 
 	body := response.Body.String()
 	for _, expected := range []string{
@@ -108,7 +108,7 @@ func TestAPISetupGatesUnhealthyApplicationURL(t *testing.T) {
 	})
 	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	response := httptest.NewRecorder()
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 
 	body := response.Body.String()
 	if !strings.Contains(body, `"application":{"label":"Open InkyPi","ready":false}`) {
@@ -129,7 +129,7 @@ func TestAPISetupExposesStandaloneHandoffBeforeTransition(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	response := httptest.NewRecorder()
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 	for _, expected := range []string{
 		`"standalone":{"ssid":"InkyPi-AB12CD34","password":"private-password"}`,
 	} {
@@ -147,7 +147,7 @@ func TestAPISetupHonorsStandaloneCredentialPolicy(t *testing.T) {
 	api, _, _ := newTestAPIWithOptions(t, Options{Branding: defaultBranding(), Handoff: &info})
 	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	response := httptest.NewRecorder()
-	api.ServeHTTP(response, request)
+	serveAPI(t, api, response, request)
 
 	body := response.Body.String()
 	if !strings.Contains(body, `"standalone":{"ssid":"InkyPi-AB12CD34"}`) ||
@@ -169,14 +169,14 @@ func TestConfiguredLogoIsServedWithRestrictedPolicy(t *testing.T) {
 
 	setupRequest := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
 	setupResponse := httptest.NewRecorder()
-	api.ServeHTTP(setupResponse, setupRequest)
+	serveAPI(t, api, setupResponse, setupRequest)
 	if !strings.Contains(setupResponse.Body.String(), `"logo_url":"`+logoURL+`"`) {
 		t.Fatalf("setup response = %s", setupResponse.Body.String())
 	}
 
 	logoRequest := httptest.NewRequest(http.MethodGet, testOrigin+logoURL, nil)
 	logoResponse := httptest.NewRecorder()
-	api.ServeHTTP(logoResponse, logoRequest)
+	serveAPI(t, api, logoResponse, logoRequest)
 	if logoResponse.Code != http.StatusOK || logoResponse.Header().Get("Content-Type") != "image/svg+xml" {
 		t.Fatalf("logo response = %d %q", logoResponse.Code, logoResponse.Header())
 	}
@@ -215,7 +215,12 @@ func TestLoadLogoRejectsCorruptRasterImage(t *testing.T) {
 
 func TestNewAPIRejectsInvalidBranding(t *testing.T) {
 	_, _, service := newTestAPI(t)
-	_, err := NewAPI(service, testOrigin, Options{Branding: Branding{ProductName: "Device"}})
+	_, err := NewAPI(
+		service,
+		testOrigin,
+		Authentication{Password: testAdminPassword},
+		Options{Branding: Branding{ProductName: "Device"}},
+	)
 	if err == nil || !strings.Contains(err.Error(), "device names") {
 		t.Fatalf("error = %v", err)
 	}

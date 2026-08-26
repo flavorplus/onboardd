@@ -9,6 +9,7 @@ Phases 0–8 established and hardware-tested the complete appliance path:
 - deterministic reconciliation without a separate persistent state file;
 - temporary access point, captive DNS/HTTP, and scoped nftables redirect;
 - setup API and embedded TypeScript UI;
+- administrator-authenticated setup API sessions;
 - product branding, templates, and application handoff;
 - checkpoint-protected transitions, exact-profile rollback, manual recovery, known
   network management, watchdog integration, and interrupted-start cleanup;
