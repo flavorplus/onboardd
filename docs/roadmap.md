@@ -40,6 +40,9 @@ Exit criteria:
 - a repeatable release checklist;
 - signed-off v1.0 packages and checksums.
 
+The support matrices, scenarios, evidence requirements, and sign-off record live in
+the durable [release-validation checklist](release.md).
+
 ## Deferred beyond v1
 
 - enterprise Wi-Fi;

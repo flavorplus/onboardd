@@ -83,6 +83,7 @@ password-file setup, service operation, upgrades, rollback, removal, and purge.
 
 The implementation and Debian lifecycle have been accepted on Raspberry Pi OS/Debian
 Trixie. Phase 9 covers the final Raspberry Pi Zero 2 W support matrix and v1.0 release
-validation. See the concise [roadmap](docs/roadmap.md).
+validation. See the concise [roadmap](docs/roadmap.md) and durable
+[release-validation checklist](docs/release.md).
 
 The project is licensed under the [MIT License](LICENSE).
