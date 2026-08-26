@@ -1,6 +1,6 @@
 # Phase 8 — Packaging and installation
 
-Status: in progress.
+Status: complete. Accepted on Raspberry Pi OS Trixie on 2026-08-26.
 
 ## Boundary
 
@@ -86,10 +86,64 @@ owned-resource cleanup already accepted in Phase 7.
 - [x] Add Debian packaging and maintainer behavior.
 - [x] Add operator installation, upgrade, rollback, removal, and purge documentation.
 - [x] Add automated package structure, lifecycle, and reproducibility checks in CI.
-- [ ] Complete clean-image Raspberry Pi package and systemd acceptance.
+- [x] Complete Raspberry Pi package and systemd acceptance.
 
 The target procedure and acceptance record are in the
 [Phase 8 Raspberry Pi checklist](phase-8-hardware-checklist.md).
+
+## Accepted hardware run
+
+The package and systemd boundary was accepted on 2026-08-26 with this target and build
+environment:
+
+- Raspberry Pi 4 Model B Rev 1.1;
+- Debian GNU/Linux 13.6 (Trixie), ARM64;
+- Linux `6.18.39+rpt-rpi-v8`;
+- NetworkManager 1.52.1;
+- systemd 257.13 and dpkg 1.22.22;
+- Go 1.26.7 and Node.js 26 in release CI.
+
+The target already contained Docker interfaces and saved NetworkManager profiles but
+had no installed onboardd package, binary, or systemd unit. Those existing profiles
+served as preservation canaries throughout the package lifecycle. This run accepts the
+ARM64 Debian package and systemd integration; Raspberry Pi Zero 2 W-specific behavior
+remains part of Phase 9 hardware coverage.
+
+The tested ARM64 packages were:
+
+| Package | SHA-256 |
+| --- | --- |
+| `onboardd_0.0.0~ci.9-1_arm64.deb` | `4bed1a92903c45222200b0e28130fdab30441553913078cce1fcbf5d2a7eda7e` |
+| `onboardd_0.0.2-1_arm64.deb` | `0c02877e18c6f7514706b8e1058cce723f0fb3061fc3e8f29d29f8af6334258d` |
+
+Both package digests passed `DEBSHA256SUMS` verification. The release workflow built
+and inspected the packages twice and compared the resulting binaries, packages, and
+checksum manifests byte for byte.
+
+Acceptance results:
+
+- Fresh installation produced the documented binary, unit, directory, and conffile
+  modes without creating password files or enabling or starting the service.
+- Once configured and enabled, the service reported `Ready`, published a healthy and
+  ready infrastructure state, maintained its 30-second watchdog, and created its runtime
+  directory and control socket with modes `0700` and `0600`.
+- Reboot automatically restored the same durable infrastructure profile and healthy
+  service state. Only expected volatile Docker, veth, bridge, and loopback profiles
+  received new identifiers.
+- Suspending PID 251590 deliberately expired the watchdog; systemd restarted it as PID
+  253066, incremented the restart counter once, and restored readiness and health.
+- An active upgrade from `0.0.0~ci.9-1` to `0.0.2-1` restarted the service while
+  preserving the configured conffile, both password files, and NetworkManager profiles.
+- An inactive rollback to `0.0.0~ci.9-1` kept the service inactive and preserved the
+  same administrator and network state.
+- Removal stopped the service and removed the binary and unit while retaining the
+  conffile, passwords, and profiles. Reinstalling `0.0.2-1` also kept the service
+  inactive and preserved those files byte for byte.
+- Purge removed the package, unit, binary, and dpkg conffile while retaining both
+  administrator-created password files with mode `0600` and every NetworkManager
+  profile.
+- No onboardd control socket, dnsmasq fragment, or captive nftables table remained after
+  purge.
 
 ## Exit criterion
 

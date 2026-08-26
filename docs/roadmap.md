@@ -255,7 +255,7 @@ permanently inaccessible.
 
 ## Phase 8 — Packaging and installation
 
-Status: in progress.
+Status: complete. Accepted on Raspberry Pi OS Trixie on 2026-08-26.
 
 Provide systemd integration, ARM64/AMD64 builds, example configuration, `.deb`
 packaging, installation and upgrade documentation, and secure default permissions.
@@ -268,11 +268,25 @@ Implementation checklist:
 - [x] Add Debian packaging with safe conffile and secret ownership behavior.
 - [x] Document installation, upgrade, rollback, removal, and purge.
 - [x] Add automated package structure, lifecycle, and reproducibility checks in CI.
-- [ ] Verify package lifecycle and watchdog recovery on Raspberry Pi OS Trixie.
+- [x] Verify package lifecycle and watchdog recovery on Raspberry Pi OS Trixie.
 
 The boundary and implementation order are in [Phase 8](phase-8.md). The clean-system
 acceptance procedure is in the
 [Phase 8 Raspberry Pi checklist](phase-8-hardware-checklist.md).
+
+Acceptance evidence:
+
+- ARM64 packages installed with the documented ownership and modes and remained
+  inactive and disabled until explicitly enabled.
+- systemd readiness, status, watchdog recovery, automatic reboot startup, and graceful
+  shutdown behaved as specified.
+- Active upgrade, inactive rollback, removal, reinstall, and purge preserved
+  administrator secrets and NetworkManager profiles.
+- Purge removed package-owned files and transient captive resources while retaining
+  administrator-created password files.
+- The package and service boundary was accepted on a Raspberry Pi 4 Model B running
+  Debian 13.6 (Trixie), ARM64. Raspberry Pi Zero 2 W-specific coverage remains in
+  Phase 9.
 
 Exit criterion: a clean supported system can install, enable, configure, upgrade, and
 remove `onboardd` predictably.

@@ -10,8 +10,8 @@ of the core daemon.
 
 ## Project status
 
-The project is being developed one phase at a time. **Phases 0 through 7 are complete.**
-Phase 8 is in progress.
+The project is being developed one phase at a time. **Phases 0 through 8 are complete.**
+Phase 9 has not started.
 
 | Phase | Deliverable | Status |
 |---|---|---|
@@ -23,7 +23,7 @@ Phase 8 is in progress.
 | 5 | Branding and configuration | Complete |
 | 6 | Application handoff | Complete |
 | 7 | Recovery and appliance reliability | Complete |
-| 8 | Packaging and installation | In progress |
+| 8 | Packaging and installation | Complete |
 | 9 | Hardware validation and v1.0 integrations | Not started |
 
 See the [roadmap](docs/roadmap.md) for the scope and exit criteria of every phase.
