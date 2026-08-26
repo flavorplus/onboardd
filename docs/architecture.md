@@ -87,13 +87,15 @@ The API allows one network operation at a time. Operation results remain queryab
 after a browser disconnect, so the normal browser can reconnect through mDNS after the
 radio transition.
 
-Static frontend files and the captive landing page are public. Every JSON API route
-except session creation requires an opaque administrator session cookie. The cookie is
-HTTP-only, strict same-site, scoped to `/api/v1/`, and replaced whenever onboardd starts.
-The login password comes from a root-only file. Mutations additionally require the
-per-process CSRF token and an accepted request origin. This prevents casual changes by
-other users of a shared LAN; the deliberately plain-HTTP captive workflow does not
-provide transport encryption.
+Static frontend files, the captive landing page, `/appearance.json`, and the optional
+`/appearance/logo` are public. Appearance contains only product names, setup copy,
+validated colors, and the logo URL so the login view can use the same styling as the
+authenticated application. Every `/api/v1/` route except session creation requires an
+opaque administrator session cookie. The cookie is HTTP-only, strict same-site, scoped
+to `/api/v1/`, and replaced whenever onboardd starts. The login password comes from a
+root-only file. Mutations additionally require the per-process CSRF token and an
+accepted request origin. This prevents casual changes by other users of a shared LAN;
+the deliberately plain-HTTP captive workflow does not provide transport encryption.
 
 ## Recovery and service lifecycle
 
@@ -140,7 +142,7 @@ need.
 - Never include Wi-Fi passwords in TOML, CLI arguments, API responses without explicit
   policy, or logs.
 - Require administrator authentication for all setup API data and operations; keep
-  the login endpoint, captive landing page, and static frontend free of secrets.
+  only session creation and presentation-only appearance resources public.
 - Restrict profile mutation to verified onboardd ownership, except explicit activation
   of a user-selected existing profile.
 - Prefer idempotent cleanup; an already absent temporary resource is success.

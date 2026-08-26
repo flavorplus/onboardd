@@ -111,7 +111,7 @@ inspect NetworkManager state.
 | C09 | Delete the active infrastructure profile externally | Reconciliation enters provisioning when no usable selected mode remains |
 | C10 | Reboot in infrastructure, standalone, and provisioning recovery | Each state reconciles to its intended result |
 | C11 | Repeat infrastructure → standalone → infrastructure five times | No duplicate owned profiles or stale captive resources accumulate |
-| C12 | Open setup without a session, then log in | Every API route first returns `401`; the correct admin password unlocks the UI |
+| C12 | Open setup without a session, then log in | The branded login renders; private `/api/v1/` routes return `401`; the correct admin password unlocks the UI |
 | C13 | Try an incorrect admin password | Login fails without creating a session; the correct password still works afterward |
 | C14 | Restart onboardd while setup is open | The old session is rejected and the UI asks for the admin password again |
 

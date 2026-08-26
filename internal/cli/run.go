@@ -146,7 +146,7 @@ func runManagedAppliance(
 	if err != nil {
 		return err
 	}
-	applicationHandler, err := webui.NewHandler(api, options.Assets)
+	applicationHandler, err := webui.NewHandler(api, options.Assets, options.Branding)
 	if err != nil {
 		return err
 	}

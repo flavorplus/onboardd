@@ -18,6 +18,21 @@ export function mockSetupAPI(policy: MockModePolicy, brand: MockBrand = "default
       );
       server.middlewares.use(async (request, response, next) => {
         const url = new URL(request.url ?? "/", "http://127.0.0.1");
+        if (request.method === "GET" && url.pathname === "/appearance.json") {
+          sendJSON(response, 200, device.appearance());
+          return;
+        }
+        if (
+          brand === "custom" &&
+          request.method === "GET" &&
+          url.pathname === "/appearance/logo"
+        ) {
+          response.statusCode = 200;
+          response.setHeader("Content-Type", "image/svg+xml");
+          response.setHeader("Cache-Control", "no-store");
+          response.end(mockLogo);
+          return;
+        }
         if (!url.pathname.startsWith("/api/")) {
           next();
           return;
@@ -53,17 +68,6 @@ export function mockSetupAPI(policy: MockModePolicy, brand: MockBrand = "default
               message: "Enter the administrator password to continue.",
             },
           });
-          return;
-        }
-        if (
-          brand === "custom" &&
-          request.method === "GET" &&
-          url.pathname === "/api/v1/branding/logo"
-        ) {
-          response.statusCode = 200;
-          response.setHeader("Content-Type", "image/svg+xml");
-          response.setHeader("Cache-Control", "no-store");
-          response.end(mockLogo);
           return;
         }
         try {

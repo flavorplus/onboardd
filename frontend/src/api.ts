@@ -1,4 +1,4 @@
-import type { Bootstrap, KnownNetwork, Network, Operation } from "./model.ts";
+import type { Bootstrap, Branding, KnownNetwork, Network, Operation } from "./model.ts";
 
 interface ErrorBody {
   error?: {
@@ -33,6 +33,10 @@ export class SetupAPI {
       method: "POST",
       body: JSON.stringify({ password }),
     });
+  }
+
+  async appearance(): Promise<Branding> {
+    return this.request<Branding>("/appearance.json");
   }
 
   async bootstrap(): Promise<Bootstrap> {

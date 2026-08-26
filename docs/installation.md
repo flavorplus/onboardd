@@ -95,6 +95,10 @@ sudo nft list ruleset
 
 ## Upgrade and rollback
 
+Every `/api/v1/` endpoint other than session creation requires the administrator
+session. The public `/appearance.json` and optional `/appearance/logo` contain only
+presentation data needed to style the login view.
+
 Before upgrading an already running pre-authentication installation, create
 `/etc/onboardd/admin-password` with mode `0600`. The default applies even when an older
 TOML conffile does not yet contain `portal.password_file`; without the file, the

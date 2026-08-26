@@ -75,7 +75,6 @@ export interface StandaloneHandoff {
 }
 
 export interface Bootstrap {
-  branding: Branding;
   capabilities: Capabilities;
   current_mode: Mode;
   operation?: Operation;

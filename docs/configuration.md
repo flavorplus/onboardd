@@ -46,6 +46,9 @@ subtitle = "Choose how this display should connect."
 
 The logo is optional. Supported SVG, PNG, and JPEG logos are validated and embedded
 active SVG content is rejected. Colors must use six-digit hexadecimal notation.
+These presentation-only values are public so the administrator login can use the
+configured product name, colors, and logo before an authenticated API session exists.
+Do not put secrets or operational data in branding fields.
 
 ### Network policy
 

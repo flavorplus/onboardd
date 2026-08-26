@@ -9,6 +9,7 @@ import {
   strengthLabel,
   wifiQRPayload,
   type Bootstrap,
+  type Branding,
   type KnownNetwork,
   type Network,
   type Operation,
@@ -21,6 +22,14 @@ const app: HTMLElement = appElement;
 
 const api = new SetupAPI();
 let bootstrap: Bootstrap;
+let branding: Branding = {
+  product_name: "Device",
+  device_name: "Device",
+  title: "How should this device connect?",
+  subtitle: "Choose Wi-Fi or standalone mode.",
+  primary_color: "#cd2455",
+  background_color: "#f8eff3",
+};
 let viewRevision = 0;
 
 void start();
@@ -28,8 +37,9 @@ void start();
 async function start(): Promise<void> {
   renderLoading("Opening device setup…");
   try {
-    bootstrap = await api.bootstrap();
+    branding = await api.appearance();
     applyBranding();
+    bootstrap = await api.bootstrap();
     const view = initialView(bootstrap);
     if (view === "operation" && bootstrap.operation) {
       await monitorOperation(bootstrap.operation);
@@ -55,13 +65,13 @@ function showLogin(): void {
   const shell = element("section", "setup-shell");
   const header = element("header", "setup-header");
   const wordmark = element("div", "wordmark");
-  wordmark.append(wirelessMark(), textElement("span", "Device setup"));
+  wordmark.append(brandMark(), textElement("span", branding.product_name));
   header.append(wordmark);
 
   const content = element("div", "setup-content");
   content.append(
     textElement("p", "Administrator access", "eyebrow"),
-    textElement("h1", "Unlock network setup"),
+    textElement("h1", `Unlock ${branding.device_name} setup`),
     textElement(
       "p",
       "Enter the administrator password to view or change this device’s network settings.",
@@ -118,7 +128,7 @@ function frame(options: {
     header.append(back);
   }
   const wordmark = element("div", "wordmark");
-  wordmark.append(brandMark(), textElement("span", bootstrap.branding.product_name));
+  wordmark.append(brandMark(), textElement("span", branding.product_name));
   header.append(wordmark);
 
   const content = element("div", "setup-content");
@@ -135,8 +145,8 @@ function frame(options: {
 function showModeChoice(): void {
   const content = frame({
     eyebrow: modeLabel(bootstrap.current_mode),
-    title: bootstrap.branding.title,
-    description: bootstrap.branding.subtitle,
+    title: branding.title,
+    description: branding.subtitle,
   });
   const choices = element("div", "choice-grid");
   if (bootstrap.capabilities.network) {
@@ -173,7 +183,7 @@ function showModeChoice(): void {
 }
 
 function applyBranding(): void {
-  const palette = brandingPalette(bootstrap.branding);
+  const palette = brandingPalette(branding);
   const root = document.documentElement;
   root.style.setProperty("--accent", palette.accent);
   root.style.setProperty("--accent-dark", palette.accentDark);
@@ -183,14 +193,14 @@ function applyBranding(): void {
   root.style.setProperty("--accent-rgb", palette.accentRGB);
   root.style.setProperty("--background-rgb", palette.backgroundRGB);
   root.style.setProperty("--accent-gradient", palette.gradient);
-  document.title = `${bootstrap.branding.product_name} setup`;
+  document.title = `${branding.product_name} setup`;
 }
 
 function brandMark(): HTMLElement {
-  if (bootstrap.branding.logo_url) {
+  if (branding.logo_url) {
     const logo = document.createElement("img");
     logo.className = "wordmark-logo";
-    logo.src = bootstrap.branding.logo_url;
+    logo.src = branding.logo_url;
     logo.alt = "";
     logo.decoding = "async";
     logo.referrerPolicy = "no-referrer";

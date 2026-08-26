@@ -3,6 +3,30 @@ import test from "node:test";
 
 import { SetupAPI } from "./api.ts";
 
+test("appearance loads before authentication", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    assert.equal(String(input), "/appearance.json");
+    return Response.json({
+      product_name: "InkyPi",
+      device_name: "Kitchen Display",
+      title: "Set up Kitchen Display",
+      subtitle: "Choose a connection.",
+      primary_color: "#123456",
+      background_color: "#f1f2f3",
+      logo_url: "/appearance/logo",
+    });
+  }) as typeof fetch;
+
+  try {
+    const appearance = await new SetupAPI().appearance();
+    assert.equal(appearance.product_name, "InkyPi");
+    assert.equal(appearance.logo_url, "/appearance/logo");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("login sends the administrator password without a CSRF header", async () => {
   const originalFetch = globalThis.fetch;
   let loginObserved = false;
@@ -53,7 +77,6 @@ test("DELETE known network sends the bootstrap CSRF token", async () => {
     const path = String(input);
     if (path === "/api/v1/setup") {
       return Response.json({
-        branding: {},
         capabilities: { network: true, standalone: true },
         current_mode: "setup",
         csrf_token: token,
@@ -87,7 +110,6 @@ test("POST known network activation sends the bootstrap CSRF token", async () =>
     const path = String(input);
     if (path === "/api/v1/setup") {
       return Response.json({
-        branding: {},
         capabilities: { network: true, standalone: true },
         current_mode: "setup",
         csrf_token: token,

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	appconfig "github.com/flavorplus/onboardd/internal/config"
 )
@@ -33,7 +34,7 @@ func TestOptionsFromRenderedConfiguration(t *testing.T) {
 	}
 }
 
-func TestAPISetupIncludesConfiguredBranding(t *testing.T) {
+func TestAppearanceIsPublicAndExcludedFromAPISetup(t *testing.T) {
 	branding := Branding{
 		ProductName:     "InkyPi",
 		DeviceName:      "Kitchen Display",
@@ -43,21 +44,39 @@ func TestAPISetupIncludesConfiguredBranding(t *testing.T) {
 		BackgroundColor: "#f1f2f3",
 	}
 	api, _, _ := newTestAPIWithOptions(t, Options{Branding: branding})
-	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
-	response := httptest.NewRecorder()
-	serveAPI(t, api, response, request)
-
+	handler, err := NewHandler(api, fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("setup")},
+	}, Options{Branding: branding})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appearanceRequest := httptest.NewRequest(http.MethodGet, testOrigin+appearanceURL, nil)
+	appearanceResponse := httptest.NewRecorder()
+	handler.ServeHTTP(appearanceResponse, appearanceRequest)
 	for _, expected := range []string{
 		`"product_name":"InkyPi"`,
 		`"device_name":"Kitchen Display"`,
 		`"primary_color":"#123456"`,
 	} {
-		if !strings.Contains(response.Body.String(), expected) {
-			t.Errorf("response does not contain %q: %s", expected, response.Body.String())
+		if !strings.Contains(appearanceResponse.Body.String(), expected) {
+			t.Errorf("public appearance does not contain %q: %s", expected, appearanceResponse.Body.String())
 		}
 	}
-	if strings.Contains(response.Body.String(), "logo_url") {
-		t.Fatalf("logo URL present without configured logo: %s", response.Body.String())
+
+	request := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
+	response := httptest.NewRecorder()
+	serveAPI(t, api, response, request)
+
+	for _, moved := range []string{
+		`"branding"`,
+		`"product_name"`,
+		`"device_name"`,
+		`"primary_color"`,
+		`"logo_url"`,
+	} {
+		if strings.Contains(response.Body.String(), moved) {
+			t.Errorf("private setup response still contains moved resource %q: %s", moved, response.Body.String())
+		}
 	}
 }
 
@@ -165,18 +184,24 @@ func TestConfiguredLogoIsServedWithRestrictedPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api, _, _ := newTestAPIWithOptions(t, Options{Branding: defaultBranding(), Logo: logo})
+	api, _, _ := newTestAPI(t)
+	handler, err := NewHandler(api, fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("setup")},
+	}, Options{Branding: defaultBranding(), Logo: logo})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	setupRequest := httptest.NewRequest(http.MethodGet, testOrigin+"/api/v1/setup", nil)
-	setupResponse := httptest.NewRecorder()
-	serveAPI(t, api, setupResponse, setupRequest)
-	if !strings.Contains(setupResponse.Body.String(), `"logo_url":"`+logoURL+`"`) {
-		t.Fatalf("setup response = %s", setupResponse.Body.String())
+	appearanceRequest := httptest.NewRequest(http.MethodGet, testOrigin+appearanceURL, nil)
+	appearanceResponse := httptest.NewRecorder()
+	handler.ServeHTTP(appearanceResponse, appearanceRequest)
+	if !strings.Contains(appearanceResponse.Body.String(), `"logo_url":"`+logoURL+`"`) {
+		t.Fatalf("appearance response = %s", appearanceResponse.Body.String())
 	}
 
 	logoRequest := httptest.NewRequest(http.MethodGet, testOrigin+logoURL, nil)
 	logoResponse := httptest.NewRecorder()
-	serveAPI(t, api, logoResponse, logoRequest)
+	handler.ServeHTTP(logoResponse, logoRequest)
 	if logoResponse.Code != http.StatusOK || logoResponse.Header().Get("Content-Type") != "image/svg+xml" {
 		t.Fatalf("logo response = %d %q", logoResponse.Code, logoResponse.Header())
 	}

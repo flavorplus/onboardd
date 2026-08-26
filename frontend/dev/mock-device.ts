@@ -33,7 +33,7 @@ const customBranding: Branding = {
   subtitle: "Connect your display to Wi-Fi or keep it available as a private offline network.",
   primary_color: "#2b6f69",
   background_color: "#eef7f3",
-  logo_url: "/api/v1/branding/logo",
+  logo_url: "/appearance/logo",
 };
 
 export interface MockRequest {
@@ -97,6 +97,10 @@ export class MockDevice {
     this.branding = brand === "custom" ? customBranding : defaultBranding;
   }
 
+  appearance(): Branding {
+    return { ...this.branding };
+  }
+
   handle(request: MockRequest, now = Date.now()): MockResponse {
     if (request.method === "GET" && request.path === "/api/v1/setup") {
       return this.json(200, this.bootstrap(now));
@@ -158,7 +162,6 @@ export class MockDevice {
     const applicationReady = !this.operation ||
       (operation?.state === "succeeded" && now - this.operation.startedAt >= 5000);
     return {
-      branding: this.branding,
       capabilities: this.capabilities,
       current_mode: this.currentMode,
       operation,

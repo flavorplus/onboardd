@@ -2,6 +2,7 @@ package web
 
 import (
 	"embed"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -27,13 +28,15 @@ const contentSecurityPolicy = "default-src 'self'; base-uri 'none'; form-action 
 
 // Handler combines the versioned API with frontend assets embedded in the binary.
 type Handler struct {
-	api    http.Handler
-	assets fs.FS
-	files  http.Handler
+	api        http.Handler
+	appearance []byte
+	logo       *Logo
+	assets     fs.FS
+	files      http.Handler
 }
 
 // NewHandler creates the complete setup HTTP handler.
-func NewHandler(api http.Handler, assets fs.FS) (*Handler, error) {
+func NewHandler(api http.Handler, assets fs.FS, options ...Options) (*Handler, error) {
 	if api == nil {
 		return nil, errors.New("setup API handler is required")
 	}
@@ -43,11 +46,34 @@ func NewHandler(api http.Handler, assets fs.FS) (*Handler, error) {
 	if _, err := fs.Stat(assets, "index.html"); err != nil {
 		return nil, errors.New("frontend index.html is required")
 	}
-	return &Handler{api: api, assets: assets, files: http.FileServerFS(assets)}, nil
+	resolved, err := resolveOptions(options)
+	if err != nil {
+		return nil, err
+	}
+	appearance, err := json.Marshal(resolved.appearance)
+	if err != nil {
+		return nil, errors.New("encode public appearance")
+	}
+	appearance = append(appearance, '\n')
+	return &Handler{
+		api:        api,
+		appearance: appearance,
+		logo:       resolved.logo,
+		assets:     assets,
+		files:      http.FileServerFS(assets),
+	}, nil
 }
 
 // ServeHTTP keeps API 404s separate from the browser application's history fallback.
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if request.URL.Path == appearanceURL {
+		handler.serveAppearance(response, request)
+		return
+	}
+	if request.URL.Path == logoURL {
+		handler.serveLogo(response, request)
+		return
+	}
 	if strings.HasPrefix(request.URL.Path, "/api/") {
 		handler.api.ServeHTTP(response, request)
 		return
@@ -75,4 +101,40 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	urlCopy.RawPath = ""
 	fallback.URL = &urlCopy
 	handler.files.ServeHTTP(response, fallback)
+}
+
+func (handler *Handler) serveAppearance(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		response.Header().Set("Allow", "GET, HEAD")
+		response.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.WriteHeader(http.StatusOK)
+	if request.Method != http.MethodHead {
+		_, _ = response.Write(handler.appearance)
+	}
+}
+
+func (handler *Handler) serveLogo(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		response.Header().Set("Allow", "GET, HEAD")
+		response.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if handler.logo == nil {
+		http.NotFound(response, request)
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("Content-Type", handler.logo.contentType)
+	response.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	response.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.WriteHeader(http.StatusOK)
+	if request.Method != http.MethodHead {
+		_, _ = response.Write(handler.logo.data)
+	}
 }

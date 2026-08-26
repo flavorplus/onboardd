@@ -67,10 +67,8 @@ type API struct {
 	csrfToken       string
 	passwordDigest  [sha256.Size]byte
 	sessionToken    string
-	branding        brandingResponse
 	handoff         *Handoff
 	healthChecker   readinessChecker
-	logo            *Logo
 	mux             *http.ServeMux
 }
 
@@ -91,7 +89,7 @@ func NewAPI(
 	if err != nil {
 		return nil, err
 	}
-	branding, logo, handoffInfo, healthChecker, err := resolveAPIOptions(options)
+	resolved, err := resolveOptions(options)
 	if err != nil {
 		return nil, err
 	}
@@ -109,15 +107,12 @@ func NewAPI(
 		csrfToken:       csrfToken,
 		passwordDigest:  sha256.Sum256([]byte(authentication.Password)),
 		sessionToken:    sessionToken,
-		branding:        branding,
-		handoff:         handoffInfo,
-		healthChecker:   healthChecker,
-		logo:            logo,
+		handoff:         resolved.handoff,
+		healthChecker:   resolved.healthChecker,
 		mux:             http.NewServeMux(),
 	}
 	api.mux.HandleFunc("POST /api/v1/session", api.postSession)
 	api.mux.HandleFunc("GET /api/v1/setup", api.getSetup)
-	api.mux.HandleFunc("GET /api/v1/branding/logo", api.getLogo)
 	api.mux.HandleFunc("GET /api/v1/networks", api.getNetworks)
 	api.mux.HandleFunc("GET /api/v1/known-networks", api.getKnownNetworks)
 	api.mux.HandleFunc("DELETE /api/v1/known-networks/{uuid}", api.deleteKnownNetwork)
@@ -214,7 +209,6 @@ func (api *API) allowSession(response http.ResponseWriter, request *http.Request
 type setupResponse struct {
 	setup.Bootstrap
 	CSRFToken string           `json:"csrf_token"`
-	Branding  brandingResponse `json:"branding"`
 	Handoff   *handoffResponse `json:"handoff,omitempty"`
 }
 
@@ -244,7 +238,6 @@ func (api *API) getSetup(response http.ResponseWriter, request *http.Request) {
 	writeJSON(response, http.StatusOK, setupResponse{
 		Bootstrap: bootstrap,
 		CSRFToken: api.csrfToken,
-		Branding:  api.branding,
 		Handoff: browserHandoff(
 			request.Context(),
 			api.handoff,
@@ -281,18 +274,6 @@ func browserHandoff(
 		}
 	}
 	return response
-}
-
-func (api *API) getLogo(response http.ResponseWriter, _ *http.Request) {
-	if api.logo == nil {
-		api.notFound(response, nil)
-		return
-	}
-	response.Header().Set("Content-Type", api.logo.contentType)
-	response.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
-	response.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
-	response.WriteHeader(http.StatusOK)
-	_, _ = response.Write(api.logo.data)
 }
 
 func (api *API) getNetworks(response http.ResponseWriter, request *http.Request) {

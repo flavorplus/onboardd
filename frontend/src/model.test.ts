@@ -8,19 +8,21 @@ import {
 	needsBrowserHandoff,
 	strengthLabel,
 	wifiQRPayload,
+	type Branding,
 	type Bootstrap,
 } from "./model.ts";
 
+const branding: Branding = {
+	product_name: "Device",
+	device_name: "Device",
+	title: "Set up your device",
+	subtitle: "Choose a connection.",
+	primary_color: "#cd2455",
+	background_color: "#f8eff3",
+};
+
 function bootstrap(overrides: Partial<Bootstrap> = {}): Bootstrap {
   return {
-		branding: {
-			product_name: "Device",
-			device_name: "Device",
-			title: "Set up your device",
-			subtitle: "Choose a connection.",
-			primary_color: "#cd2455",
-			background_color: "#f8eff3",
-		},
     capabilities: { network: true, standalone: true },
     current_mode: "setup",
     csrf_token: "token",
@@ -40,14 +42,14 @@ test("active operations take precedence over mode choice", () => {
 });
 
 test("branding palette derives safe supporting colors", () => {
-	const palette = brandingPalette(bootstrap().branding);
+	const palette = brandingPalette(branding);
 	assert.equal(palette.accent, "#cd2455");
 	assert.equal(palette.accentDark, "#941a3d");
 	assert.equal(palette.accentRGB, "205 36 85");
 	assert.match(palette.gradient, /^linear-gradient/);
 
 	const fallback = brandingPalette({
-		...bootstrap().branding,
+		...branding,
 		primary_color: "not-a-color",
 		background_color: "also-invalid",
 	});

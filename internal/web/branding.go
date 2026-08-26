@@ -8,11 +8,15 @@ import (
 	appconfig "github.com/flavorplus/onboardd/internal/config"
 )
 
-const logoURL = "/api/v1/branding/logo"
+const (
+	appearanceURL = "/appearance.json"
+	logoURL       = "/appearance/logo"
+)
 
 var brandingColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
-// Branding is safe product copy and color data returned to the setup frontend.
+// Branding is safe product copy and color data returned before authentication so the
+// login screen can match the configured product.
 type Branding struct {
 	ProductName     string `json:"product_name"`
 	DeviceName      string `json:"device_name"`
@@ -22,7 +26,7 @@ type Branding struct {
 	BackgroundColor string `json:"background_color"`
 }
 
-type brandingResponse struct {
+type appearanceResponse struct {
 	Branding
 	LogoURL string `json:"logo_url,omitempty"`
 }
@@ -75,11 +79,16 @@ func defaultBranding() Branding {
 	}
 }
 
-func resolveAPIOptions(
-	options []Options,
-) (brandingResponse, *Logo, *Handoff, readinessChecker, error) {
+type resolvedOptions struct {
+	appearance    appearanceResponse
+	logo          *Logo
+	handoff       *Handoff
+	healthChecker readinessChecker
+}
+
+func resolveOptions(options []Options) (resolvedOptions, error) {
 	if len(options) > 1 {
-		return brandingResponse{}, nil, nil, nil, errors.New("only one setup API options value is allowed")
+		return resolvedOptions{}, errors.New("only one setup options value is allowed")
 	}
 	branding := defaultBranding()
 	var logo *Logo
@@ -92,21 +101,26 @@ func resolveAPIOptions(
 		healthChecker = options[0].HealthChecker
 	}
 	if strings.TrimSpace(branding.ProductName) == "" || strings.TrimSpace(branding.DeviceName) == "" {
-		return brandingResponse{}, nil, nil, nil, errors.New("branding product and device names are required")
+		return resolvedOptions{}, errors.New("branding product and device names are required")
 	}
 	if strings.TrimSpace(branding.Title) == "" {
-		return brandingResponse{}, nil, nil, nil, errors.New("branding title is required")
+		return resolvedOptions{}, errors.New("branding title is required")
 	}
 	if !brandingColorPattern.MatchString(branding.PrimaryColor) ||
 		!brandingColorPattern.MatchString(branding.BackgroundColor) {
-		return brandingResponse{}, nil, nil, nil, errors.New("branding colors must be six-digit hexadecimal values")
+		return resolvedOptions{}, errors.New("branding colors must be six-digit hexadecimal values")
 	}
-	response := brandingResponse{Branding: branding}
+	response := appearanceResponse{Branding: branding}
 	if logo != nil {
 		response.LogoURL = logoURL
 	}
 	if handoffInfo != nil && handoffInfo.HealthCheckURL != "" && healthChecker == nil {
 		healthChecker = newHealthChecker()
 	}
-	return response, logo, handoffInfo, healthChecker, nil
+	return resolvedOptions{
+		appearance:    response,
+		logo:          logo,
+		handoff:       handoffInfo,
+		healthChecker: healthChecker,
+	}, nil
 }

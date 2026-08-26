@@ -52,10 +52,11 @@ test("simulates successful standalone selection and capability policy", () => {
 test("simulates configured branding and an optional logo", () => {
   const device = new MockDevice("both", "custom");
   const setup = record(device.handle({ method: "GET", path: "/api/v1/setup" }, 1000).body);
-  const branding = record(setup.branding);
+  const branding = device.appearance();
   const handoff = record(setup.handoff);
   assert.equal(branding.product_name, "InkyPi");
-  assert.equal(branding.logo_url, "/api/v1/branding/logo");
+  assert.equal(branding.logo_url, "/appearance/logo");
+  assert.equal(setup.branding, undefined);
   assert.equal(handoff.setup_url, "http://127.0.0.1:5173/");
 });
 

@@ -27,7 +27,6 @@ func TestAPIRequiresAuthenticationForEveryPrivateRoute(t *testing.T) {
 		path   string
 	}{
 		{method: http.MethodGet, path: "/api/v1/setup"},
-		{method: http.MethodGet, path: "/api/v1/branding/logo"},
 		{method: http.MethodGet, path: "/api/v1/networks"},
 		{method: http.MethodGet, path: "/api/v1/known-networks"},
 		{method: http.MethodDelete, path: "/api/v1/known-networks/example"},
