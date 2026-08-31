@@ -423,7 +423,7 @@ type fakeCaptiveExiter struct {
 	err   error
 }
 
-func (captive *fakeCaptiveExiter) ExitCaptive(context.Context) error {
+func (captive *fakeCaptiveExiter) LeaveProvisioning(context.Context) error {
 	captive.exits++
 	return captive.err
 }

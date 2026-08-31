@@ -38,8 +38,8 @@ func TestManagerEntersLeavesAndReentersProvisioning(t *testing.T) {
 		if err := manager.EnterProvisioning(context.Background()); err != nil {
 			t.Fatalf("duplicate EnterProvisioning() error = %v", err)
 		}
-		if err := manager.ExitCaptive(context.Background()); err != nil {
-			t.Fatalf("ExitCaptive() error = %v", err)
+		if err := manager.LeaveProvisioning(context.Background()); err != nil {
+			t.Fatalf("LeaveProvisioning() error = %v", err)
 		}
 		if err := manager.LeaveProvisioning(context.Background()); err != nil {
 			t.Fatalf("duplicate LeaveProvisioning() error = %v", err)

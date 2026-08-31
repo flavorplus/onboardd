@@ -133,12 +133,6 @@ func (m *Manager) LeaveProvisioning(ctx context.Context) error {
 	return m.cleanupLocked(ctx)
 }
 
-// ExitCaptive lets successful setup operations converge on the same cleanup path
-// used by the appliance state controller.
-func (m *Manager) ExitCaptive(ctx context.Context) error {
-	return m.LeaveProvisioning(ctx)
-}
-
 func (m *Manager) cleanupLocked(ctx context.Context) error {
 	var cleanupErrors []error
 	if m.redirectNeedsRemove {
