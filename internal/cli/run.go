@@ -14,6 +14,7 @@ import (
 	"github.com/flavorplus/onboardd/internal/appliance"
 	"github.com/flavorplus/onboardd/internal/captive"
 	"github.com/flavorplus/onboardd/internal/discovery"
+	"github.com/flavorplus/onboardd/internal/networkmanager"
 	"github.com/flavorplus/onboardd/internal/observability"
 	"github.com/flavorplus/onboardd/internal/recovery"
 	setupflow "github.com/flavorplus/onboardd/internal/setup"
@@ -89,78 +90,23 @@ func runManagedAppliance(
 			)
 		}
 	}()
-	redirect, err := captive.NewNFTRedirect("nft")
-	if err != nil {
-		return err
-	}
-	provisioner, err := captive.NewProvisioner(client, dns)
-	if err != nil {
-		return err
-	}
-	captiveManager, err := captive.NewManager(
-		provisioner,
-		redirect,
-		captive.ManagerOptions{
-			Provisioning: captive.ProvisioningOptions{
-				Interface: options.Interface,
-				SSID:      options.ProvisioningSSID,
-				Password:  options.ProvisioningPSK,
-				Address:   options.ProvisioningAddress,
-				Band:      options.Band,
-				Wait:      options.ActivationWait,
-			},
-			PublicHTTPPort:   options.PublicHTTPPort,
-			ListenerHTTPPort: options.ListenerHTTPPort,
-			CleanupTimeout:   applianceCleanupTimeout,
-		},
+	components, err := buildApplianceComponents(
+		runtimeContext,
+		client,
+		dns,
+		landingPage,
+		options,
+		lifecycle,
 	)
-	if err != nil {
-		return err
-	}
-
-	backend, err := newNetworkBackend(client, captiveManager, options)
-	if err != nil {
-		return err
-	}
-	service, err := setupflow.NewService(runtimeContext, backend, setupflow.Capabilities{
-		Network:    options.NetworkEnabled,
-		Standalone: options.StandaloneEnabled,
-	})
 	if err != nil {
 		return err
 	}
 	stopOperations := func() error {
 		return shutdownSetupOperations(
 			runtimeContext,
-			service,
+			components.setup,
 			options.RestorationWait+applianceCleanupTimeout,
 		)
-	}
-	api, err := webui.NewAPI(
-		service,
-		options.PortalOrigin,
-		webui.Authentication{Password: options.AdminPassword},
-		options.Branding,
-	)
-	if err != nil {
-		return err
-	}
-	applicationHandler, err := webui.NewHandler(api, options.Assets, options.Branding)
-	if err != nil {
-		return err
-	}
-	setupHandler := http.NewServeMux()
-	setupHandler.Handle("/healthz", lifecycle.Health())
-	setupHandler.Handle("/", applicationHandler)
-	handler, err := captive.NewHTTPHandler(
-		options.PortalURL,
-		options.Branding.Handoff.SetupURL,
-		options.ListenerHTTPPort,
-		landingPage,
-		setupHandler,
-	)
-	if err != nil {
-		return err
 	}
 
 	listenConfig := &net.ListenConfig{}
@@ -168,7 +114,7 @@ func runManagedAppliance(
 	httpService, err := captive.StartHTTPService(
 		runtimeContext,
 		listenConfig.Listen,
-		handler,
+		components.handler,
 		captive.HTTPServiceOptions{
 			Network:         "tcp4",
 			Address:         listenAddress,
@@ -197,7 +143,7 @@ func runManagedAppliance(
 		applianceCleanupTimeout,
 	)
 	startupRecoveryErr := errors.Join(
-		captiveManager.RecoverStartup(startupRecoveryContext),
+		components.captive.RecoverStartup(startupRecoveryContext),
 		client.DeletePendingInfrastructureProfiles(
 			startupRecoveryContext,
 			options.Interface,
@@ -226,7 +172,7 @@ func runManagedAppliance(
 		return errors.Join(
 			listenerErr,
 			operationErr,
-			stopManagedResources(runtimeContext, captiveManager, publisher),
+			stopManagedResources(runtimeContext, components.captive, publisher),
 		)
 	}
 	if !strings.EqualFold(publisher.Hostname(), options.Hostname) {
@@ -249,7 +195,7 @@ func runManagedAppliance(
 	recoveryRequests := recovery.NewRequests()
 	controller, err := appliance.NewController(
 		engine,
-		captiveManager,
+		components.captive,
 		recoveryRequests,
 		appliance.Config{
 			ActionTimeout: options.ActivationWait + applianceCleanupTimeout,
@@ -352,7 +298,7 @@ func runManagedAppliance(
 	operationErr := stopOperations()
 	cleanupErr := errors.Join(
 		operationErr,
-		stopManagedResources(runtimeContext, captiveManager, publisher),
+		stopManagedResources(runtimeContext, components.captive, publisher),
 	)
 	if len(componentErrors) > 0 || cleanupErr != nil {
 		return errors.Join(errors.Join(componentErrors...), cleanupErr)
@@ -370,6 +316,101 @@ func retryReporter(
 	return func(ctx context.Context, attempt, maximum int) {
 		lifecycle.ComponentRetry(ctx, component, attempt, maximum)
 	}
+}
+
+// applianceComponents is everything the appliance constructs before it starts
+// anything. Construction carries no cleanup obligation: every failure below is a
+// plain return because nothing has been started yet.
+type applianceComponents struct {
+	captive *captive.Manager
+	setup   *setupflow.Service
+	handler http.Handler
+}
+
+// buildApplianceComponents wires the captive plumbing, the setup workflow, and
+// the HTTP handler that fronts them. The D-Bus client and the DNS configuration
+// are created by the caller so that a bad configuration path is still reported
+// before the system bus is dialled.
+func buildApplianceComponents(
+	runtimeContext context.Context,
+	client *networkmanager.Client,
+	dns *captive.DNSConfigFile,
+	landingPage []byte,
+	options setupOptions,
+	lifecycle *observability.Lifecycle,
+) (applianceComponents, error) {
+	redirect, err := captive.NewNFTRedirect("nft")
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	provisioner, err := captive.NewProvisioner(client, dns)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	captiveManager, err := captive.NewManager(
+		provisioner,
+		redirect,
+		captive.ManagerOptions{
+			Provisioning: captive.ProvisioningOptions{
+				Interface: options.Interface,
+				SSID:      options.ProvisioningSSID,
+				Password:  options.ProvisioningPSK,
+				Address:   options.ProvisioningAddress,
+				Band:      options.Band,
+				Wait:      options.ActivationWait,
+			},
+			PublicHTTPPort:   options.PublicHTTPPort,
+			ListenerHTTPPort: options.ListenerHTTPPort,
+			CleanupTimeout:   applianceCleanupTimeout,
+		},
+	)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+
+	backend, err := newNetworkBackend(client, captiveManager, options)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	service, err := setupflow.NewService(runtimeContext, backend, setupflow.Capabilities{
+		Network:    options.NetworkEnabled,
+		Standalone: options.StandaloneEnabled,
+	})
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	api, err := webui.NewAPI(
+		service,
+		options.PortalOrigin,
+		webui.Authentication{Password: options.AdminPassword},
+		options.Branding,
+	)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	applicationHandler, err := webui.NewHandler(api, options.Assets, options.Branding)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	setupHandler := http.NewServeMux()
+	setupHandler.Handle("/healthz", lifecycle.Health())
+	setupHandler.Handle("/", applicationHandler)
+	handler, err := captive.NewHTTPHandler(
+		options.PortalURL,
+		options.Branding.Handoff.SetupURL,
+		options.ListenerHTTPPort,
+		landingPage,
+		setupHandler,
+	)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+
+	return applianceComponents{
+		captive: captiveManager,
+		setup:   service,
+		handler: handler,
+	}, nil
 }
 
 func stopManagedResources(
