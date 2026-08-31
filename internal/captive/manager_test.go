@@ -14,22 +14,7 @@ import (
 )
 
 func TestManagerEntersLeavesAndReentersProvisioning(t *testing.T) {
-	calls := []string{}
-	provisioner, err := NewProvisioner(
-		&fakeNetworkManager{calls: &calls},
-		&fakeDNSConfigurer{calls: &calls},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := NewManager(
-		provisioner,
-		&fakePortRedirector{calls: &calls},
-		validManagerOptions(),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager, fakes := newTestManager(t)
 
 	for range 2 {
 		if err := manager.EnterProvisioning(context.Background()); err != nil {
@@ -58,98 +43,60 @@ func TestManagerEntersLeavesAndReentersProvisioning(t *testing.T) {
 		"dns-remove",
 	}
 	want := append(append([]string{}, wantCycle...), wantCycle...)
-	if !reflect.DeepEqual(calls, want) {
-		t.Fatalf("calls = %#v, want %#v", calls, want)
+	if !reflect.DeepEqual(*fakes.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", *fakes.calls, want)
 	}
 }
 
 func TestManagerRecoversStaleCaptiveResourcesBeforeReconciliation(t *testing.T) {
-	calls := []string{}
-	network := &fakeNetworkManager{calls: &calls}
-	provisioner, err := NewProvisioner(network, &fakeDNSConfigurer{calls: &calls})
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := NewManager(
-		provisioner,
-		&fakePortRedirector{calls: &calls},
-		validManagerOptions(),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager, fakes := newTestManager(t)
 
 	if err := manager.RecoverStartup(context.Background()); err != nil {
 		t.Fatalf("RecoverStartup() error = %v", err)
 	}
 	want := []string{"redirect-remove", "finalize", "dns-remove"}
-	if !reflect.DeepEqual(calls, want) {
-		t.Fatalf("calls = %#v, want %#v", calls, want)
+	if !reflect.DeepEqual(*fakes.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", *fakes.calls, want)
 	}
-	if network.finalizedRole != networkmanager.RoleProvisioning ||
-		network.finalizedInterface != "wlan0" || network.finalizedKeepUUID != "" {
+	if fakes.network.finalizedRole != networkmanager.RoleProvisioning ||
+		fakes.network.finalizedInterface != "wlan0" || fakes.network.finalizedKeepUUID != "" {
 		t.Fatalf(
 			"finalized stale profile scope = interface %q, role %q, keep %q",
-			network.finalizedInterface,
-			network.finalizedRole,
-			network.finalizedKeepUUID,
+			fakes.network.finalizedInterface,
+			fakes.network.finalizedRole,
+			fakes.network.finalizedKeepUUID,
 		)
 	}
 }
 
 func TestManagerStartupRecoveryAttemptsEveryOwnedResource(t *testing.T) {
-	calls := []string{}
-	network := &fakeNetworkManager{calls: &calls, fail: "finalize"}
-	dns := &fakeDNSConfigurer{calls: &calls, removeFailures: 1}
-	provisioner, err := NewProvisioner(network, dns)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := NewManager(
-		provisioner,
-		&fakePortRedirector{calls: &calls, removeFailures: 1},
-		validManagerOptions(),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager, fakes := newTestManager(t)
+	fakes.network.fail = "finalize"
+	fakes.dns.removeFailures = 1
+	fakes.redirect.removeFailures = 1
 
-	err = manager.RecoverStartup(context.Background())
+	err := manager.RecoverStartup(context.Background())
 	if err == nil {
 		t.Fatal("RecoverStartup() error = nil")
 	}
 	for _, call := range []string{"redirect-remove", "finalize", "dns-remove"} {
-		if !containsCall(calls, call) {
-			t.Errorf("startup cleanup is missing %q: %#v", call, calls)
+		if !containsCall(*fakes.calls, call) {
+			t.Errorf("startup cleanup is missing %q: %#v", call, *fakes.calls)
 		}
 	}
 }
 
 func TestManagerUnwindsProvisioningWhenRedirectFails(t *testing.T) {
-	calls := []string{}
-	provisioner, err := NewProvisioner(
-		&fakeNetworkManager{calls: &calls},
-		&fakeDNSConfigurer{calls: &calls},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := NewManager(
-		provisioner,
-		&fakePortRedirector{calls: &calls, fail: "redirect"},
-		validManagerOptions(),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager, fakes := newTestManager(t)
+	fakes.redirect.fail = "redirect"
 
-	err = manager.EnterProvisioning(context.Background())
+	err := manager.EnterProvisioning(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "install captive HTTP redirect") {
 		t.Fatalf("EnterProvisioning() error = %v", err)
 	}
 	for _, want := range []string{"redirect-remove", "delete:provisioning-uuid", "dns-remove"} {
-		if !containsCall(calls, want) {
-			t.Errorf("cleanup is missing %q: %#v", want, calls)
+		if !containsCall(*fakes.calls, want) {
+			t.Errorf("cleanup is missing %q: %#v", want, *fakes.calls)
 		}
 	}
 }
@@ -187,19 +134,8 @@ func TestManagerRetriesOnlyIncompleteCaptiveCleanup(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			calls := []string{}
-			network := &fakeNetworkManager{calls: &calls}
-			dns := &fakeDNSConfigurer{calls: &calls}
-			redirect := &fakePortRedirector{calls: &calls}
-			test.configure(network, dns, redirect)
-			provisioner, err := NewProvisioner(network, dns)
-			if err != nil {
-				t.Fatal(err)
-			}
-			manager, err := NewManager(provisioner, redirect, validManagerOptions())
-			if err != nil {
-				t.Fatal(err)
-			}
+			manager, fakes := newTestManager(t)
+			test.configure(fakes.network, fakes.dns, fakes.redirect)
 			if err := manager.EnterProvisioning(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -209,12 +145,12 @@ func TestManagerRetriesOnlyIncompleteCaptiveCleanup(t *testing.T) {
 			if err := manager.LeaveProvisioning(context.Background()); err != nil {
 				t.Fatalf("second LeaveProvisioning() error = %v", err)
 			}
-			if got := countCalls(calls, test.wantRepeatedCall); got != 2 {
-				t.Fatalf("%s calls = %d, want 2; calls = %#v", test.wantRepeatedCall, got, calls)
+			if got := countCalls(*fakes.calls, test.wantRepeatedCall); got != 2 {
+				t.Fatalf("%s calls = %d, want 2; calls = %#v", test.wantRepeatedCall, got, *fakes.calls)
 			}
 			for _, call := range test.wantSingleCalls {
-				if got := countCalls(calls, call); got != 1 {
-					t.Fatalf("%s calls = %d, want 1; calls = %#v", call, got, calls)
+				if got := countCalls(*fakes.calls, call); got != 1 {
+					t.Fatalf("%s calls = %d, want 1; calls = %#v", call, got, *fakes.calls)
 				}
 			}
 		})
@@ -222,66 +158,40 @@ func TestManagerRetriesOnlyIncompleteCaptiveCleanup(t *testing.T) {
 }
 
 func TestManagerRetriesFailedEntryCleanupBeforeReentering(t *testing.T) {
-	calls := []string{}
-	network := &fakeNetworkManager{calls: &calls}
-	dns := &fakeDNSConfigurer{calls: &calls}
-	redirect := &fakePortRedirector{
-		calls:          &calls,
-		fail:           "redirect",
-		removeFailures: 1,
-	}
-	provisioner, err := NewProvisioner(network, dns)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := NewManager(provisioner, redirect, validManagerOptions())
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager, fakes := newTestManager(t)
+	fakes.redirect.fail = "redirect"
+	fakes.redirect.removeFailures = 1
 	if err := manager.EnterProvisioning(context.Background()); err == nil {
 		t.Fatal("first EnterProvisioning() error = nil")
 	}
-	redirect.fail = ""
+	fakes.redirect.fail = ""
 	if err := manager.EnterProvisioning(context.Background()); err != nil {
 		t.Fatalf("second EnterProvisioning() error = %v", err)
 	}
-	if got := countCalls(calls, "start-ap"); got != 2 {
-		t.Fatalf("start-ap calls = %d, want 2; calls = %#v", got, calls)
+	if got := countCalls(*fakes.calls, "start-ap"); got != 2 {
+		t.Fatalf("start-ap calls = %d, want 2; calls = %#v", got, *fakes.calls)
 	}
-	if got := countCalls(calls, "redirect-remove"); got != 2 {
-		t.Fatalf("redirect-remove calls = %d, want 2; calls = %#v", got, calls)
+	if got := countCalls(*fakes.calls, "redirect-remove"); got != 2 {
+		t.Fatalf("redirect-remove calls = %d, want 2; calls = %#v", got, *fakes.calls)
 	}
 }
 
 func TestManagerRetriesIncompleteProvisionerStartBeforeReentering(t *testing.T) {
-	calls := []string{}
-	network := &fakeNetworkManager{
-		calls:          &calls,
-		fail:           "wait",
-		deleteFailures: 1,
-	}
-	dns := &fakeDNSConfigurer{calls: &calls}
-	redirect := &fakePortRedirector{calls: &calls}
-	provisioner, err := NewProvisioner(network, dns)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager, err := NewManager(provisioner, redirect, validManagerOptions())
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager, fakes := newTestManager(t)
+	fakes.network.fail = "wait"
+	fakes.network.deleteFailures = 1
 	if err := manager.EnterProvisioning(context.Background()); err == nil {
 		t.Fatal("first EnterProvisioning() error = nil")
 	}
-	network.fail = ""
+	fakes.network.fail = ""
 	if err := manager.EnterProvisioning(context.Background()); err != nil {
 		t.Fatalf("second EnterProvisioning() error = %v", err)
 	}
-	if got := countCalls(calls, "delete:provisioning-uuid"); got != 2 {
-		t.Fatalf("profile delete calls = %d, want 2; calls = %#v", got, calls)
+	if got := countCalls(*fakes.calls, "delete:provisioning-uuid"); got != 2 {
+		t.Fatalf("profile delete calls = %d, want 2; calls = %#v", got, *fakes.calls)
 	}
-	if got := countCalls(calls, "start-ap"); got != 2 {
-		t.Fatalf("start-ap calls = %d, want 2; calls = %#v", got, calls)
+	if got := countCalls(*fakes.calls, "start-ap"); got != 2 {
+		t.Fatalf("start-ap calls = %d, want 2; calls = %#v", got, *fakes.calls)
 	}
 }
 
@@ -455,4 +365,34 @@ func (network *fakeNetworkManager) DeleteOwnedProfile(_ context.Context, uuid st
 		return errors.New("test deletion failure")
 	}
 	return nil
+}
+
+// captiveFakes are the three collaborators a Manager is built from. Their
+// failure fields are read when the method is called, not when the fake is
+// constructed, so a test may configure them after newTestManager returns.
+type captiveFakes struct {
+	calls    *[]string
+	network  *fakeNetworkManager
+	dns      *fakeDNSConfigurer
+	redirect *fakePortRedirector
+}
+
+func newTestManager(t *testing.T) (*Manager, captiveFakes) {
+	t.Helper()
+	calls := []string{}
+	fakes := captiveFakes{
+		calls:    &calls,
+		network:  &fakeNetworkManager{calls: &calls},
+		dns:      &fakeDNSConfigurer{calls: &calls},
+		redirect: &fakePortRedirector{calls: &calls},
+	}
+	provisioner, err := NewProvisioner(fakes.network, fakes.dns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(provisioner, fakes.redirect, validManagerOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return manager, fakes
 }
