@@ -14,5 +14,5 @@ coverage.out
 *.secret
 .env
 
-# Frontend dependencies. Production output is committed under internal/web/dist.
+# Frontend dependencies. Production output is committed under internal/webui/dist.
 node_modules/

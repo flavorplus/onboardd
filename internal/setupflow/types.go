@@ -1,4 +1,4 @@
-// Package setup defines the product-facing setup workflow without exposing
+// Package setupflow defines the product-facing setup workflow without exposing
 // NetworkManager or captive-plumbing details to the HTTP layer.
 package setupflow
 
