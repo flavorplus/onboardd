@@ -31,9 +31,9 @@ func TestSuccessfulStartup(t *testing.T) {
 
 func TestFailedActivationFallsBackToProvisioning(t *testing.T) {
 	snapshot := Snapshot{
-		DeviceManaged: true,
-		DeviceState:   DeviceFailed,
-		Profiles: []Profile{
+		DeviceManaged:   true,
+		DeviceCondition: DeviceFailed,
+		Profiles: []ProfileSummary{
 			{UUID: "office", Mode: ModeInfrastructure, Autoconnect: true},
 		},
 	}
@@ -82,11 +82,11 @@ func TestInternetConnectivityFailureExpiresGracePeriod(t *testing.T) {
 
 func TestStandaloneIntentSurvivesProcessRestart(t *testing.T) {
 	snapshot := Snapshot{
-		DeviceManaged: true,
-		DeviceState:   DeviceActivated,
-		ActiveUUID:    "standalone",
-		ActiveMode:    ModeStandalone,
-		Profiles: []Profile{
+		DeviceManaged:   true,
+		DeviceCondition: DeviceActivated,
+		ActiveUUID:      "standalone",
+		ActiveMode:      ModeStandalone,
+		Profiles: []ProfileSummary{
 			{UUID: "standalone", Mode: ModeStandalone, Autoconnect: true},
 		},
 	}
@@ -127,9 +127,9 @@ func TestDisconnectionStartsGraceThenProvisioning(t *testing.T) {
 	waitForStage(t, transitions, StageInfrastructure)
 
 	disconnected := Snapshot{
-		DeviceManaged: true,
-		DeviceState:   DeviceDisconnected,
-		Profiles: []Profile{
+		DeviceManaged:   true,
+		DeviceCondition: DeviceDisconnected,
+		Profiles: []ProfileSummary{
 			{UUID: "office", Mode: ModeInfrastructure, Autoconnect: true},
 		},
 	}
@@ -146,9 +146,9 @@ func TestDisconnectionStartsGraceThenProvisioning(t *testing.T) {
 
 func TestInterruptedTransitionStopsTimer(t *testing.T) {
 	snapshot := Snapshot{
-		DeviceManaged: true,
-		DeviceState:   DeviceConnecting,
-		Profiles: []Profile{
+		DeviceManaged:   true,
+		DeviceCondition: DeviceConnecting,
+		Profiles: []ProfileSummary{
 			{UUID: "office", Mode: ModeInfrastructure, Autoconnect: true},
 		},
 	}
@@ -180,9 +180,9 @@ func TestInterruptedTransitionStopsTimer(t *testing.T) {
 
 func TestStandaloneActivationExpiresGracePeriod(t *testing.T) {
 	snapshot := Snapshot{
-		DeviceManaged: true,
-		DeviceState:   DeviceDisconnected,
-		Profiles: []Profile{
+		DeviceManaged:   true,
+		DeviceCondition: DeviceDisconnected,
+		Profiles: []ProfileSummary{
 			{UUID: "standalone", Mode: ModeStandalone, Autoconnect: true},
 		},
 	}
@@ -213,14 +213,14 @@ func TestStandaloneActivationExpiresGracePeriod(t *testing.T) {
 
 func TestActiveStandaloneDoesNotRequireInternet(t *testing.T) {
 	snapshot := Snapshot{
-		DeviceManaged: true,
-		DeviceState:   DeviceActivated,
-		ActiveUUID:    "standalone",
-		ActiveMode:    ModeStandalone,
+		DeviceManaged:   true,
+		DeviceCondition: DeviceActivated,
+		ActiveUUID:      "standalone",
+		ActiveMode:      ModeStandalone,
 		Connectivity: connectivity.Observation{
 			Internet: connectivity.InternetNone,
 		},
-		Profiles: []Profile{
+		Profiles: []ProfileSummary{
 			{UUID: "standalone", Mode: ModeStandalone, Autoconnect: true},
 		},
 	}
@@ -245,16 +245,16 @@ func TestNewValidatesConfiguration(t *testing.T) {
 
 func readyInfrastructureSnapshot() Snapshot {
 	return Snapshot{
-		DeviceManaged: true,
-		DeviceState:   DeviceActivated,
-		ActiveUUID:    "office",
-		ActiveMode:    ModeInfrastructure,
+		DeviceManaged:   true,
+		DeviceCondition: DeviceActivated,
+		ActiveUUID:      "office",
+		ActiveMode:      ModeInfrastructure,
 		Connectivity: connectivity.Observation{
 			Activated:       true,
 			HasLocalAddress: true,
 			Internet:        connectivity.InternetFull,
 		},
-		Profiles: []Profile{
+		Profiles: []ProfileSummary{
 			{UUID: "office", Mode: ModeInfrastructure, Autoconnect: true},
 		},
 	}
@@ -426,7 +426,7 @@ func TestNetworkManagerObserverNormalizesSnapshot(t *testing.T) {
 	if snapshot.ActiveMode != ModeInfrastructure || snapshot.ActiveUUID != "office" {
 		t.Fatalf("active snapshot = %#v", snapshot)
 	}
-	if snapshot.DeviceState != DeviceActivated || !snapshot.Connectivity.HasLocalAddress {
+	if snapshot.DeviceCondition != DeviceActivated || !snapshot.Connectivity.HasLocalAddress {
 		t.Fatalf("device snapshot = %#v", snapshot)
 	}
 	if snapshot.Connectivity.Internet != connectivity.InternetLimited {

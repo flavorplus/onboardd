@@ -31,15 +31,15 @@ const (
 	StageStopped                Stage = "stopped"
 )
 
-// DeviceState is the small subset of device lifecycle needed by reconciliation.
-type DeviceState string
+// DeviceCondition is the small subset of device lifecycle needed by reconciliation.
+type DeviceCondition string
 
 const (
-	DeviceUnknown      DeviceState = "unknown"
-	DeviceDisconnected DeviceState = "disconnected"
-	DeviceConnecting   DeviceState = "connecting"
-	DeviceActivated    DeviceState = "activated"
-	DeviceFailed       DeviceState = "failed"
+	DeviceUnknown      DeviceCondition = "unknown"
+	DeviceDisconnected DeviceCondition = "disconnected"
+	DeviceConnecting   DeviceCondition = "connecting"
+	DeviceActivated    DeviceCondition = "activated"
+	DeviceFailed       DeviceCondition = "failed"
 )
 
 // Reason explains why the machine entered a stage.
@@ -62,8 +62,8 @@ const (
 	ReasonInterrupted            Reason = "interrupted"
 )
 
-// Profile is the persistent intent needed by the reconciler.
-type Profile struct {
+// ProfileSummary is the persistent intent needed by the reconciler.
+type ProfileSummary struct {
 	UUID        string `json:"uuid"`
 	Mode        Mode   `json:"mode"`
 	Autoconnect bool   `json:"autoconnect"`
@@ -71,12 +71,12 @@ type Profile struct {
 
 // Snapshot is a normalized point-in-time view of NetworkManager.
 type Snapshot struct {
-	DeviceManaged bool                     `json:"device_managed"`
-	DeviceState   DeviceState              `json:"device_state"`
-	ActiveUUID    string                   `json:"active_uuid,omitempty"`
-	ActiveMode    Mode                     `json:"active_mode"`
-	Connectivity  connectivity.Observation `json:"connectivity"`
-	Profiles      []Profile                `json:"profiles"`
+	DeviceManaged   bool                     `json:"device_managed"`
+	DeviceCondition DeviceCondition          `json:"device_condition"`
+	ActiveUUID      string                   `json:"active_uuid,omitempty"`
+	ActiveMode      Mode                     `json:"active_mode"`
+	Connectivity    connectivity.Observation `json:"connectivity"`
+	Profiles        []ProfileSummary         `json:"profiles"`
 }
 
 // State is derived transient state. Sequence exists only for the current process run.

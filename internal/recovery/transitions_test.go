@@ -255,8 +255,8 @@ func TestInfrastructureAttemptValidatesCandidateBeforeCheckpoint(t *testing.T) {
 	}
 }
 
-func validOptions() InfrastructureOptions {
-	return InfrastructureOptions{
+func validOptions() InfrastructureTransition {
+	return InfrastructureTransition{
 		Interface: "wlan0",
 		Candidate: networkmanager.InfrastructureOptions{
 			SSID:     "Office",
@@ -271,8 +271,8 @@ func validOptions() InfrastructureOptions {
 	}
 }
 
-func validSavedOptions() SavedInfrastructureOptions {
-	return SavedInfrastructureOptions{
+func validSavedOptions() SavedInfrastructureTransition {
+	return SavedInfrastructureTransition{
 		Interface:       "wlan0",
 		UUID:            "saved-uuid",
 		SSID:            "Office",
@@ -550,8 +550,8 @@ func TestStandaloneAttemptReportsRollbackFailure(t *testing.T) {
 	}
 }
 
-func validStandaloneOptions() StandaloneOptions {
-	return StandaloneOptions{
+func validStandaloneOptions() StandaloneTransition {
+	return StandaloneTransition{
 		Interface: "wlan0",
 		Candidate: networkmanager.AccessPointOptions{
 			SSID:     "Device",
