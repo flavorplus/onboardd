@@ -552,12 +552,9 @@ func validPSK(password string) bool {
 	if length != 64 {
 		return false
 	}
-	for _, character := range password {
-		if !strings.ContainsRune("0123456789abcdefABCDEF", character) {
-			return false
-		}
-	}
-	return true
+	// A 64-character password is a raw PMK and must be pure hexadecimal.
+	_, err := hex.DecodeString(password)
+	return err == nil
 }
 
 func validProfileUUID(value string) bool {
