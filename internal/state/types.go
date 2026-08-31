@@ -100,25 +100,6 @@ const (
 	EventCancelled      EventKind = "cancelled"
 )
 
-// Event is a typed input to the reconciliation machine.
-type Event interface {
-	Kind() EventKind
-}
-
-type BootEvent struct{}
-
-func (BootEvent) Kind() EventKind { return EventBoot }
-
-type NetworkChangedEvent struct {
-	Change NetworkChange
-}
-
-func (NetworkChangedEvent) Kind() EventKind { return EventNetworkChanged }
-
-type GraceExpiredEvent struct{}
-
-func (GraceExpiredEvent) Kind() EventKind { return EventGraceExpired }
-
 // Transition is emitted whenever the observable state changes.
 type Transition struct {
 	Previous State     `json:"previous"`

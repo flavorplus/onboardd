@@ -82,13 +82,13 @@ func (engine *Engine) run(
 	var graceTimer timer
 	var grace <-chan time.Time
 
-	emit := func(next State, event Event) bool {
+	emit := func(next State, kind EventKind) bool {
 		if sameState(current, next) {
 			return true
 		}
 		sequence++
 		next.Sequence = sequence
-		transition := Transition{Previous: current, Current: next, Trigger: event.Kind()}
+		transition := Transition{Previous: current, Current: next, Trigger: kind}
 		select {
 		case transitions <- transition:
 			current = next
@@ -106,9 +106,9 @@ func (engine *Engine) run(
 		grace = nil
 	}
 
-	reconcile := func(event Event, timedOut bool) bool {
-		if event.Kind() == EventBoot {
-			if !emit(State{Stage: StageReconciling, Mode: current.Mode, Reason: ReasonInspectingNetwork}, event) {
+	reconcile := func(kind EventKind, timedOut bool) bool {
+		if kind == EventBoot {
+			if !emit(State{Stage: StageReconciling, Mode: current.Mode, Reason: ReasonInspectingNetwork}, kind) {
 				return false
 			}
 		}
@@ -123,7 +123,7 @@ func (engine *Engine) run(
 				Mode:   ModeNone,
 				Reason: ReasonObservationFailed,
 				Detail: snapshotErr.Error(),
-			}, event)
+			}, kind)
 			select {
 			case errorsOut <- fmt.Errorf("inspect network state: %w", snapshotErr):
 			case <-ctx.Done():
@@ -140,14 +140,13 @@ func (engine *Engine) run(
 		} else {
 			stopGrace()
 		}
-		return emit(next, event)
+		return emit(next, kind)
 	}
 
-	boot := BootEvent{}
-	if !emit(State{Stage: StageBooting, Mode: ModeNone, Reason: ReasonStarting}, boot) {
+	if !emit(State{Stage: StageBooting, Mode: ModeNone, Reason: ReasonStarting}, EventBoot) {
 		return
 	}
-	if !reconcile(boot, false) && ctx.Err() == nil {
+	if !reconcile(EventBoot, false) && ctx.Err() == nil {
 		return
 	}
 
@@ -167,12 +166,12 @@ func (engine *Engine) run(
 			default:
 			}
 			return
-		case change, ok := <-changes:
+		case _, ok := <-changes:
 			if !ok {
 				changes = nil
 				continue
 			}
-			if !reconcile(NetworkChangedEvent{Change: change}, false) && ctx.Err() == nil {
+			if !reconcile(EventNetworkChanged, false) && ctx.Err() == nil {
 				return
 			}
 		case watchErr, ok := <-watchErrors:
@@ -190,7 +189,7 @@ func (engine *Engine) run(
 		case <-grace:
 			graceTimer = nil
 			grace = nil
-			if !reconcile(GraceExpiredEvent{}, true) && ctx.Err() == nil {
+			if !reconcile(EventGraceExpired, true) && ctx.Err() == nil {
 				return
 			}
 		}
