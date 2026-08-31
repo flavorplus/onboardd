@@ -41,17 +41,24 @@ listener_port = 19000
 	}
 }
 
-func TestDecodeRequiresSchemaVersion(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`[product]
+// Every rule Decode enforces, with the fixture that violates it and the text
+// the error must identify it by. Each entry was previously its own test.
+func TestDecodeRejectsInvalidConfiguration(t *testing.T) {
+	tests := []struct {
+		name string
+		toml string
+		want []string
+	}{
+		{
+			name: "missing schema version",
+			toml: `[product]
 name = "Display"
-`))
-	if err == nil || !strings.Contains(err.Error(), "schema_version is required") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestDecodeRejectsUnknownKeys(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			want: []string{"schema_version is required"},
+		},
+		{
+			name: "unknown keys",
+			toml: `
 schema_version = 1
 
 [network]
@@ -59,137 +66,127 @@ interfase = "wlan1"
 
 [branding]
 accent_color = "#123456"
-`))
-	if err == nil {
-		t.Fatal("Decode() accepted unknown keys")
-	}
-	for _, key := range []string{"branding.accent_color", "network.interfase"} {
-		if !strings.Contains(err.Error(), key) {
-			t.Errorf("error %q does not identify %q", err, key)
-		}
-	}
-}
-
-func TestDecodeRejectsRemovedHandoffHostname(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			// Both offending keys must be named, not just the first.
+			want: []string{"branding.accent_color", "network.interfase"},
+		},
+		{
+			name: "removed handoff hostname",
+			toml: `
 schema_version = 1
 
 [handoff]
 hostname = "display-player"
-`))
-	if err == nil || !strings.Contains(err.Error(), "handoff.hostname") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestDecodeRejectsDisabledProductionModes(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			want: []string{"handoff.hostname"},
+		},
+		{
+			name: "both production modes disabled",
+			toml: `
 schema_version = 1
 
 [network]
 infrastructure_enabled = false
 standalone_enabled = false
-`))
-	if err == nil || !strings.Contains(err.Error(), "at least one") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestDecodeRejectsNetworkAddressForStandaloneGateway(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			want: []string{"at least one"},
+		},
+		{
+			name: "network address as standalone gateway",
+			toml: `
 schema_version = 1
 
 [network.standalone]
 address = "10.50.0.0/24"
-`))
-	if err == nil || !strings.Contains(err.Error(), "usable host") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestDecodeRejectsBroadcastAddressForStandaloneGateway(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			want: []string{"usable host"},
+		},
+		{
+			name: "broadcast address as standalone gateway",
+			toml: `
 schema_version = 1
 
 [network.standalone]
 address = "10.50.0.255/24"
-`))
-	if err == nil || !strings.Contains(err.Error(), "usable host") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestDecodeRejectsCaptivePublicPortAsListener(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			want: []string{"usable host"},
+		},
+		{
+			name: "captive public port as listener",
+			toml: `
 schema_version = 1
 
 [portal]
 listener_port = 80
-`))
-	if err == nil || !strings.Contains(err.Error(), "fixed captive public port") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestDecodeRejectsEmptyAdminPasswordFile(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			want: []string{"fixed captive public port"},
+		},
+		{
+			name: "empty admin password file",
+			toml: `
 schema_version = 1
 
 [portal]
 password_file = ""
-`))
-	if err == nil || !strings.Contains(err.Error(), "portal.password_file") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestDecodeRejectsIncompleteApplicationHandoff(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			want: []string{"portal.password_file"},
+		},
+		{
+			name: "incomplete application handoff",
+			toml: `
 schema_version = 1
 
 [handoff]
 application_label = "Open player"
-`))
-	if err == nil || !strings.Contains(err.Error(), "configured together") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestDecodeRejectsWhitespaceOnlyApplicationHandoff(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			want: []string{"configured together"},
+		},
+		{
+			name: "whitespace only application handoff",
+			toml: `
 schema_version = 1
 
 [handoff]
 application_label = "   "
 application_url = "http://device.local/"
-`))
-	if err == nil || !strings.Contains(err.Error(), "configured together") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestDecodeRejectsHealthCheckWithoutApplication(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			want: []string{"configured together"},
+		},
+		{
+			name: "health check without application",
+			toml: `
 schema_version = 1
 
 [handoff]
 health_check_url = "http://127.0.0.1/health"
-`))
-	if err == nil || !strings.Contains(err.Error(), "requires handoff.application_url") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestDecodeRejectsInvalidStaticHandoffURL(t *testing.T) {
-	_, err := decodeForTest(strings.NewReader(`
+`,
+			want: []string{"requires handoff.application_url"},
+		},
+		{
+			name: "non http static handoff url",
+			toml: `
 schema_version = 1
 
 [handoff]
 application_label = "Open player"
 application_url = "file:///etc/passwd"
-`))
-	if err == nil || !strings.Contains(err.Error(), "absolute HTTP or HTTPS") {
-		t.Fatalf("error = %v", err)
+`,
+			want: []string{"absolute HTTP or HTTPS"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := decodeForTest(strings.NewReader(test.toml))
+			if err == nil {
+				t.Fatalf("Decode() accepted %s", test.name)
+			}
+			for _, want := range test.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not identify %q", err, want)
+				}
+			}
+		})
 	}
 }
 
