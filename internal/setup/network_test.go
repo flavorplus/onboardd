@@ -145,7 +145,7 @@ func TestNetworkBackendConnectsKnownNetworkWithProtectedTransition(t *testing.T)
 	options := infrastructure.savedOptions
 	if options.UUID != uuid || options.SSID != "Workshop" ||
 		options.PreviousUUID != "provisioning" ||
-		options.PreviousIPv4Address != netip.MustParseAddr("10.42.0.1") {
+		options.PreviousAddress != netip.MustParseAddr("10.42.0.1") {
 		t.Fatalf("saved infrastructure options = %#v", options)
 	}
 	if captive.exits != 1 {
@@ -258,7 +258,7 @@ func TestNetworkBackendProtectedTransitionsUseCurrentConnection(t *testing.T) {
 					SSID: "Office", Password: "test-password",
 				})
 				if infrastructure.options.PreviousUUID != "current" ||
-					infrastructure.options.PreviousIPv4Address != netip.MustParseAddr("192.168.1.24") {
+					infrastructure.options.PreviousAddress != netip.MustParseAddr("192.168.1.24") {
 					t.Fatalf("infrastructure options = %#v", infrastructure.options)
 				}
 			} else {

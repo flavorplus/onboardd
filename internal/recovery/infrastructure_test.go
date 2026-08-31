@@ -262,26 +262,26 @@ func validOptions() InfrastructureOptions {
 			SSID:     "Office",
 			Password: "test-password",
 		},
-		Requirement:         connectivity.RequirementLocal,
-		ActivationWait:      30 * time.Second,
-		RollbackAfter:       90 * time.Second,
-		RestorationWait:     time.Second,
-		PreviousUUID:        "provisioning-uuid",
-		PreviousIPv4Address: netip.MustParseAddr("10.42.0.1"),
+		Requirement:     connectivity.RequirementLocal,
+		ActivationWait:  30 * time.Second,
+		RollbackAfter:   90 * time.Second,
+		RestorationWait: time.Second,
+		PreviousUUID:    "provisioning-uuid",
+		PreviousAddress: netip.MustParseAddr("10.42.0.1"),
 	}
 }
 
 func validSavedOptions() SavedInfrastructureOptions {
 	return SavedInfrastructureOptions{
-		Interface:           "wlan0",
-		UUID:                "saved-uuid",
-		SSID:                "Office",
-		Requirement:         connectivity.RequirementLocal,
-		ActivationWait:      30 * time.Second,
-		RollbackAfter:       90 * time.Second,
-		RestorationWait:     time.Second,
-		PreviousUUID:        "provisioning-uuid",
-		PreviousIPv4Address: netip.MustParseAddr("10.42.0.1"),
+		Interface:       "wlan0",
+		UUID:            "saved-uuid",
+		SSID:            "Office",
+		Requirement:     connectivity.RequirementLocal,
+		ActivationWait:  30 * time.Second,
+		RollbackAfter:   90 * time.Second,
+		RestorationWait: time.Second,
+		PreviousUUID:    "provisioning-uuid",
+		PreviousAddress: netip.MustParseAddr("10.42.0.1"),
 	}
 }
 

@@ -234,12 +234,12 @@ func (backend *NetworkBackend) Connect(ctx context.Context, request ConnectionRe
 			Open:     request.Open,
 			Hidden:   request.Hidden,
 		},
-		Requirement:         backend.options.Requirement,
-		ActivationWait:      backend.options.ActivationWait,
-		RollbackAfter:       backend.options.RollbackAfter,
-		RestorationWait:     backend.options.RestorationWait,
-		PreviousUUID:        previousUUID,
-		PreviousIPv4Address: previousAddress,
+		Requirement:     backend.options.Requirement,
+		ActivationWait:  backend.options.ActivationWait,
+		RollbackAfter:   backend.options.RollbackAfter,
+		RestorationWait: backend.options.RestorationWait,
+		PreviousUUID:    previousUUID,
+		PreviousAddress: previousAddress,
 	})
 	if err != nil {
 		return publicTransitionFailure(err)
@@ -265,15 +265,15 @@ func (backend *NetworkBackend) ConnectKnownNetwork(ctx context.Context, uuid str
 		return err
 	}
 	_, err = backend.infrastructure.AttemptSaved(ctx, recovery.SavedInfrastructureOptions{
-		Interface:           backend.options.Interface,
-		UUID:                profile.UUID,
-		SSID:                profile.SSID,
-		Requirement:         backend.options.Requirement,
-		ActivationWait:      backend.options.ActivationWait,
-		RollbackAfter:       backend.options.RollbackAfter,
-		RestorationWait:     backend.options.RestorationWait,
-		PreviousUUID:        previousUUID,
-		PreviousIPv4Address: previousAddress,
+		Interface:       backend.options.Interface,
+		UUID:            profile.UUID,
+		SSID:            profile.SSID,
+		Requirement:     backend.options.Requirement,
+		ActivationWait:  backend.options.ActivationWait,
+		RollbackAfter:   backend.options.RollbackAfter,
+		RestorationWait: backend.options.RestorationWait,
+		PreviousUUID:    previousUUID,
+		PreviousAddress: previousAddress,
 	})
 	if err != nil {
 		return publicTransitionFailure(err)
