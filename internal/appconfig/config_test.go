@@ -201,13 +201,27 @@ func TestLoadFileIncludesPathInError(t *testing.T) {
 	}
 }
 
+// Every configuration shipped in config/ is advertised in the README, so each one
+// must load through the real decoder. Previously only example.toml was covered.
 func TestReferenceConfigurationLoads(t *testing.T) {
-	loaded, err := Resolve(ResolveOptions{ConfigPath: filepath.Join("..", "..", "config", "example.toml")})
+	shipped, err := filepath.Glob(filepath.Join("..", "..", "config", "*.toml"))
 	if err != nil {
-		t.Fatalf("Resolve(example.toml) error = %v", err)
+		t.Fatalf("glob shipped configurations: %v", err)
 	}
-	if loaded.Product.Name != "Display Player" {
-		t.Fatalf("Product.Name = %q", loaded.Product.Name)
+	if len(shipped) < 3 {
+		t.Fatalf("expected the example, Anthias and InkyPi configurations, found %v", shipped)
+	}
+
+	for _, path := range shipped {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			loaded, err := Resolve(ResolveOptions{ConfigPath: path})
+			if err != nil {
+				t.Fatalf("Resolve(%s) error = %v", filepath.Base(path), err)
+			}
+			if loaded.Product.Name == "" {
+				t.Fatalf("%s resolved with an empty product name", filepath.Base(path))
+			}
+		})
 	}
 }
 
