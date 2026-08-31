@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flavorplus/onboardd/internal/setup"
+	"github.com/flavorplus/onboardd/internal/setupflow"
 )
 
 const (
@@ -134,13 +134,13 @@ func TestAPISetupBootstrap(t *testing.T) {
 		t.Fatalf("Cache-Control = %q", response.Header().Get("Cache-Control"))
 	}
 	var body struct {
-		Capabilities setup.Capabilities `json:"capabilities"`
-		CurrentMode  setup.Mode         `json:"current_mode"`
-		CSRFToken    string             `json:"csrf_token"`
+		Capabilities setupflow.Capabilities `json:"capabilities"`
+		CurrentMode  setupflow.Mode         `json:"current_mode"`
+		CSRFToken    string                 `json:"csrf_token"`
 	}
 	decodeResponse(t, response, &body)
 	if !body.Capabilities.Network || !body.Capabilities.Standalone ||
-		body.CurrentMode != setup.ModeSetup || len(body.CSRFToken) != 64 {
+		body.CurrentMode != setupflow.ModeSetup || len(body.CSRFToken) != 64 {
 		t.Fatalf("body = %#v", body)
 	}
 }
@@ -166,7 +166,7 @@ func TestAPIConnectionMutationAndOperation(t *testing.T) {
 		t.Fatal("password leaked in response")
 	}
 	var accepted struct {
-		Operation setup.Operation `json:"operation"`
+		Operation setupflow.Operation `json:"operation"`
 	}
 	decodeResponse(t, response, &accepted)
 	if accepted.Operation.ID == "" || accepted.Operation.Network != "Office" {
@@ -174,7 +174,7 @@ func TestAPIConnectionMutationAndOperation(t *testing.T) {
 	}
 
 	close(backend.release)
-	waitForAPIState(t, api, accepted.Operation.ID, setup.OperationSucceeded)
+	waitForAPIState(t, api, accepted.Operation.ID, setupflow.OperationSucceeded)
 	backend.mu.Lock()
 	connection := backend.connection
 	backend.mu.Unlock()
@@ -206,15 +206,15 @@ func TestAPIDoesNotBeginOperationWhenAcceptedResponseCannotFlush(t *testing.T) {
 		t.Fatal("backend started after accepted response flush failed")
 	}
 	var accepted struct {
-		Operation setup.Operation `json:"operation"`
+		Operation setupflow.Operation `json:"operation"`
 	}
 	decodeResponse(t, response.ResponseRecorder, &accepted)
 	operation, ok := service.Operation(accepted.Operation.ID)
-	if !ok || operation.State != setup.OperationFailed || operation.Failure == nil ||
+	if !ok || operation.State != setupflow.OperationFailed || operation.Failure == nil ||
 		operation.Failure.Code != "operation_interrupted" {
 		t.Fatalf("operation = %#v, exists = %t", operation, ok)
 	}
-	if _, err := service.StartConnection(setup.ConnectionRequest{SSID: "Other"}); err != nil {
+	if _, err := service.StartConnection(setupflow.ConnectionRequest{SSID: "Other"}); err != nil {
 		t.Fatalf("next StartConnection() error = %v", err)
 	}
 }
@@ -245,7 +245,7 @@ func TestAPIDoesNotBeginOperationWhenAcceptedResponseCannotWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bootstrap.Operation == nil || bootstrap.Operation.State != setup.OperationFailed ||
+	if bootstrap.Operation == nil || bootstrap.Operation.State != setupflow.OperationFailed ||
 		bootstrap.Operation.Failure == nil ||
 		bootstrap.Operation.Failure.Code != "operation_interrupted" {
 		t.Fatalf("latest operation = %#v", bootstrap.Operation)
@@ -287,11 +287,11 @@ func TestAPIConnectionPreservesOpenAndHiddenChoices(t *testing.T) {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 			}
 			var accepted struct {
-				Operation setup.Operation `json:"operation"`
+				Operation setupflow.Operation `json:"operation"`
 			}
 			decodeResponse(t, response, &accepted)
 			close(backend.release)
-			waitForAPIState(t, api, accepted.Operation.ID, setup.OperationSucceeded)
+			waitForAPIState(t, api, accepted.Operation.ID, setupflow.OperationSucceeded)
 			backend.mu.Lock()
 			connection := backend.connection
 			backend.mu.Unlock()
@@ -305,7 +305,7 @@ func TestAPIConnectionPreservesOpenAndHiddenChoices(t *testing.T) {
 func TestAPIListsAndForgetsKnownNetwork(t *testing.T) {
 	api, backend, _ := newTestAPI(t)
 	uuid := "329cdb0f-d696-4f63-a17e-84ac66582f43"
-	backend.knownNetworks = []setup.KnownNetwork{
+	backend.knownNetworks = []setupflow.KnownNetwork{
 		{UUID: uuid, SSID: "Office", Managed: true, CanForget: true},
 		{UUID: "b01a1c10-ce1e-40e7-9fe2-7ebcf30a43c7", SSID: "System", Automatic: true},
 	}
@@ -337,7 +337,7 @@ func TestAPIListsAndForgetsKnownNetwork(t *testing.T) {
 func TestAPIConnectsKnownNetwork(t *testing.T) {
 	api, backend, _ := newTestAPI(t)
 	uuid := "0a3aeac5-3e46-4f46-b9b0-99b2f83d4cb1"
-	backend.knownNetworks = []setup.KnownNetwork{{
+	backend.knownNetworks = []setupflow.KnownNetwork{{
 		UUID: uuid, SSID: "Workshop", Managed: true, CanConnect: true, CanForget: true,
 	}}
 	request := httptest.NewRequest(
@@ -354,14 +354,14 @@ func TestAPIConnectsKnownNetwork(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 	var accepted struct {
-		Operation setup.Operation `json:"operation"`
+		Operation setupflow.Operation `json:"operation"`
 	}
 	decodeResponse(t, response, &accepted)
 	if accepted.Operation.Network != "Workshop" {
 		t.Fatalf("operation = %#v", accepted.Operation)
 	}
 	close(backend.release)
-	waitForAPIState(t, api, accepted.Operation.ID, setup.OperationSucceeded)
+	waitForAPIState(t, api, accepted.Operation.ID, setupflow.OperationSucceeded)
 	if backend.knownUUID != uuid {
 		t.Fatalf("known network UUID = %q", backend.knownUUID)
 	}
@@ -380,12 +380,12 @@ func TestAPIProtectsKnownNetworkActivation(t *testing.T) {
 		{name: "invalid uuid", uuid: "not-a-uuid", token: true, wantStatus: http.StatusBadRequest},
 		{
 			name: "system profile", uuid: uuid, token: true,
-			backendErr: setup.NewPublicError("network_read_only", "read only"),
+			backendErr: setupflow.NewPublicError("network_read_only", "read only"),
 			wantStatus: http.StatusForbidden,
 		},
 		{
 			name: "active profile", uuid: uuid, token: true,
-			backendErr: setup.NewPublicError("active_network", "active"),
+			backendErr: setupflow.NewPublicError("active_network", "active"),
 			wantStatus: http.StatusConflict,
 		},
 	} {
@@ -424,12 +424,12 @@ func TestAPIProtectsKnownNetworkDeletion(t *testing.T) {
 		{name: "invalid uuid", uuid: "not-a-uuid", token: true, wantStatus: http.StatusBadRequest},
 		{
 			name: "system profile", uuid: "329cdb0f-d696-4f63-a17e-84ac66582f43", token: true,
-			backendErr: setup.NewPublicError("network_read_only", "read only"),
+			backendErr: setupflow.NewPublicError("network_read_only", "read only"),
 			wantStatus: http.StatusForbidden,
 		},
 		{
 			name: "active profile", uuid: "329cdb0f-d696-4f63-a17e-84ac66582f43", token: true,
-			backendErr: setup.NewPublicError("active_network", "active"),
+			backendErr: setupflow.NewPublicError("active_network", "active"),
 			wantStatus: http.StatusConflict,
 		},
 	} {
@@ -602,17 +602,17 @@ func TestAPIUnknownRouteReturnsJSON(t *testing.T) {
 	}
 }
 
-func newTestAPI(t *testing.T) (*API, *fakeAPIBackend, *setup.Service) {
+func newTestAPI(t *testing.T) (*API, *fakeAPIBackend, *setupflow.Service) {
 	return newTestAPIWithOptions(t)
 }
 
-func newTestAPIWithOptions(t *testing.T, options ...Options) (*API, *fakeAPIBackend, *setup.Service) {
+func newTestAPIWithOptions(t *testing.T, options ...Options) (*API, *fakeAPIBackend, *setupflow.Service) {
 	t.Helper()
 	backend := &fakeAPIBackend{release: make(chan struct{})}
-	service, err := setup.NewService(
+	service, err := setupflow.NewService(
 		context.Background(),
 		backend,
-		setup.Capabilities{Network: true, Standalone: true},
+		setupflow.Capabilities{Network: true, Standalone: true},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -668,7 +668,7 @@ func decodeResponse(t *testing.T, response *httptest.ResponseRecorder, destinati
 	}
 }
 
-func waitForAPIState(t *testing.T, api *API, id string, state setup.OperationState) setup.Operation {
+func waitForAPIState(t *testing.T, api *API, id string, state setupflow.OperationState) setupflow.Operation {
 	t.Helper()
 	deadline := time.NewTimer(time.Second)
 	ticker := time.NewTicker(time.Millisecond)
@@ -679,7 +679,7 @@ func waitForAPIState(t *testing.T, api *API, id string, state setup.OperationSta
 		response := httptest.NewRecorder()
 		serveAPI(t, api, response, request)
 		var body struct {
-			Operation setup.Operation `json:"operation"`
+			Operation setupflow.Operation `json:"operation"`
 		}
 		decodeResponse(t, response, &body)
 		if body.Operation.State == state {
@@ -695,9 +695,9 @@ func waitForAPIState(t *testing.T, api *API, id string, state setup.OperationSta
 
 type fakeAPIBackend struct {
 	mu            sync.Mutex
-	mode          setup.Mode
-	connection    setup.ConnectionRequest
-	knownNetworks []setup.KnownNetwork
+	mode          setupflow.Mode
+	connection    setupflow.ConnectionRequest
+	knownNetworks []setupflow.KnownNetwork
 	forgottenUUID string
 	knownUUID     string
 	forgetErr     error
@@ -722,19 +722,19 @@ func (response *writeErrorResponseWriter) Write([]byte) (int, error) {
 	return 0, response.err
 }
 
-func (backend *fakeAPIBackend) CurrentMode(context.Context) (setup.Mode, error) {
+func (backend *fakeAPIBackend) CurrentMode(context.Context) (setupflow.Mode, error) {
 	if backend.mode != "" {
 		return backend.mode, nil
 	}
-	return setup.ModeSetup, nil
+	return setupflow.ModeSetup, nil
 }
 
-func (backend *fakeAPIBackend) Networks(context.Context) ([]setup.Network, error) {
-	return []setup.Network{{SSID: "Office", Security: "protected", Strength: 80}}, backend.networkErr
+func (backend *fakeAPIBackend) Networks(context.Context) ([]setupflow.Network, error) {
+	return []setupflow.Network{{SSID: "Office", Security: "protected", Strength: 80}}, backend.networkErr
 }
 
-func (backend *fakeAPIBackend) KnownNetworks(context.Context) ([]setup.KnownNetwork, error) {
-	return append([]setup.KnownNetwork(nil), backend.knownNetworks...), backend.networkErr
+func (backend *fakeAPIBackend) KnownNetworks(context.Context) ([]setupflow.KnownNetwork, error) {
+	return append([]setupflow.KnownNetwork(nil), backend.knownNetworks...), backend.networkErr
 }
 
 func (backend *fakeAPIBackend) ForgetKnownNetwork(_ context.Context, uuid string) error {
@@ -742,7 +742,7 @@ func (backend *fakeAPIBackend) ForgetKnownNetwork(_ context.Context, uuid string
 	return backend.forgetErr
 }
 
-func (backend *fakeAPIBackend) Connect(_ context.Context, request setup.ConnectionRequest) error {
+func (backend *fakeAPIBackend) Connect(_ context.Context, request setupflow.ConnectionRequest) error {
 	backend.mu.Lock()
 	backend.connection = request
 	backend.started = true

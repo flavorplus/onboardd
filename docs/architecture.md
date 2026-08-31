@@ -120,9 +120,9 @@ internal/appliance         reconciliation engine, NetworkManager observer, and t
 internal/networkmanager    narrow typed D-Bus adapter
 internal/captive           provisioning, DNS, redirect, and HTTP listener
 internal/recovery          protected transitions and recovery control socket
-internal/setup             product-facing setup operations
-internal/web               API, branding/handoff, and embedded frontend
-internal/appconfig            strict TOML, templates, and device identity
+internal/setupflow         product-facing setup operations
+internal/webui             API, branding/handoff, and embedded frontend
+internal/appconfig         strict TOML, templates, and device identity
 internal/discovery         Avahi hostname/service publication
 internal/observability     health, redacted lifecycle events, and the HTTP and
                            systemd-notify transports that publish them

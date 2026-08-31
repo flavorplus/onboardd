@@ -19,7 +19,7 @@ import (
 	"github.com/flavorplus/onboardd/internal/discovery"
 	"github.com/flavorplus/onboardd/internal/networkmanager"
 	"github.com/flavorplus/onboardd/internal/recovery"
-	setupflow "github.com/flavorplus/onboardd/internal/setup"
+	"github.com/flavorplus/onboardd/internal/setupflow"
 	"github.com/flavorplus/onboardd/internal/webui"
 )
 

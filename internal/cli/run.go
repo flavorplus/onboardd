@@ -17,7 +17,7 @@ import (
 	"github.com/flavorplus/onboardd/internal/networkmanager"
 	"github.com/flavorplus/onboardd/internal/observability"
 	"github.com/flavorplus/onboardd/internal/recovery"
-	setupflow "github.com/flavorplus/onboardd/internal/setup"
+	"github.com/flavorplus/onboardd/internal/setupflow"
 	"github.com/flavorplus/onboardd/internal/webui"
 )
 
@@ -103,7 +103,7 @@ func runManagedAppliance(
 	stopOperations := func() error {
 		return shutdownSetupOperations(
 			runtimeContext,
-			components.setup,
+			components.service,
 			options.RestorationWait+applianceCleanupTimeout,
 		)
 	}
@@ -142,7 +142,7 @@ func runManagedAppliance(
 		applianceCleanupTimeout,
 	)
 	startupRecoveryErr := errors.Join(
-		components.captive.RecoverStartup(startupRecoveryContext),
+		components.captiveManager.RecoverStartup(startupRecoveryContext),
 		client.DeletePendingInfrastructureProfiles(
 			startupRecoveryContext,
 			options.Interface,
@@ -171,7 +171,7 @@ func runManagedAppliance(
 		return errors.Join(
 			listenerErr,
 			operationErr,
-			stopManagedResources(runtimeContext, components.captive, publisher),
+			stopManagedResources(runtimeContext, components.captiveManager, publisher),
 		)
 	}
 	if !strings.EqualFold(publisher.Hostname(), options.Hostname) {
@@ -183,7 +183,7 @@ func runManagedAppliance(
 		return errors.Join(startErr, stopStartupResources())
 	}
 
-	supervisor, recoveryRequests, err := buildReconciler(client, components.captive, options, lifecycle)
+	supervisor, recoveryRequests, err := buildReconciler(client, components.captiveManager, options, lifecycle)
 	if err != nil {
 		return errors.Join(err, stopStartupResources())
 	}
@@ -249,7 +249,7 @@ func runManagedAppliance(
 	operationErr := stopOperations()
 	cleanupErr := errors.Join(
 		operationErr,
-		stopManagedResources(runtimeContext, components.captive, publisher),
+		stopManagedResources(runtimeContext, components.captiveManager, publisher),
 	)
 	if len(componentErrors) > 0 || cleanupErr != nil {
 		return errors.Join(errors.Join(componentErrors...), cleanupErr)
@@ -273,9 +273,9 @@ func retryReporter(
 // anything. Construction carries no cleanup obligation: every failure below is a
 // plain return because nothing has been started yet.
 type applianceComponents struct {
-	captive *captive.Manager
-	setup   *setupflow.Service
-	handler http.Handler
+	captiveManager *captive.Manager
+	service        *setupflow.Service
+	handler        http.Handler
 }
 
 // buildApplianceComponents wires the captive plumbing, the setup workflow, and
@@ -358,9 +358,9 @@ func buildApplianceComponents(
 	}
 
 	return applianceComponents{
-		captive: captiveManager,
-		setup:   service,
-		handler: handler,
+		captiveManager: captiveManager,
+		service:        service,
+		handler:        handler,
 	}, nil
 }
 

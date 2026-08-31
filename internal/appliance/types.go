@@ -1,5 +1,3 @@
-// Package state reconciles transient onboardd orchestration state from NetworkManager
-// observations. It deliberately persists nothing itself.
 package appliance
 
 import (

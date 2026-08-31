@@ -237,7 +237,7 @@ linters:
       - path: internal/appliance/engine\.go
         linters: [gocyclo]
         text: "evaluate" # 15
-      - path: internal/setup/network\.go
+      - path: internal/setupflow/network\.go
         linters: [gocyclo]
         text: "CurrentMode" # 15
       - path: internal/networkmanager/wifi\.go

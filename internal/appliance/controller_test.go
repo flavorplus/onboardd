@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	recoveryinput "github.com/flavorplus/onboardd/internal/recovery"
+	"github.com/flavorplus/onboardd/internal/recovery"
 )
 
 func TestControllerAppliesOnlyStableStateChanges(t *testing.T) {
@@ -28,7 +28,7 @@ func TestControllerAppliesOnlyStableStateChanges(t *testing.T) {
 	controller := newTestController(t,
 		source,
 		provisioning,
-		recoveryinput.NewRequests(),
+		recovery.NewRequests(),
 		ControllerOptions{ActionTimeout: time.Second},
 	)
 
@@ -55,7 +55,7 @@ func TestControllerReportsNormalizedLifecycleEvents(t *testing.T) {
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
+		recovery.NewRequests(),
 		ControllerOptions{ActionTimeout: time.Second, Observer: observer},
 	)
 
@@ -72,7 +72,7 @@ func TestControllerReportsNormalizedLifecycleEvents(t *testing.T) {
 }
 
 func TestControllerReportsRecoveryRequestAndFailedAction(t *testing.T) {
-	requests := recoveryinput.NewRequests()
+	requests := recovery.NewRequests()
 	requests.Request()
 	observer := &fakeLifecycleObserver{}
 	controller := newTestController(t,
@@ -102,7 +102,7 @@ func TestControllerEntersManualRecoveryAndIgnoresStaleProductionState(t *testing
 		StageStopped,
 	)
 	provisioning := &fakeProvisioningManager{}
-	requests := recoveryinput.NewRequests()
+	requests := recovery.NewRequests()
 	requests.Request()
 	controller := newTestController(t,
 		source,
@@ -124,7 +124,7 @@ func TestControllerEntersManualRecoveryAndIgnoresStaleProductionState(t *testing
 }
 
 func TestControllerRetainsFailedManualRecoveryForRestart(t *testing.T) {
-	requests := recoveryinput.NewRequests()
+	requests := recovery.NewRequests()
 	requests.Request()
 	provisioning := &fakeProvisioningManager{enterErr: errors.New("AP unavailable")}
 	first := newTestController(t,
@@ -197,7 +197,7 @@ func TestControllerReportsSourceAndActionFailures(t *testing.T) {
 			controller := newTestController(t,
 				test.source,
 				test.provisioning,
-				recoveryinput.NewRequests(),
+				recovery.NewRequests(),
 				ControllerOptions{ActionTimeout: time.Second},
 			)
 			err := controller.Run(context.Background())
@@ -217,7 +217,7 @@ func TestControllerReportsTerminalFailure(t *testing.T) {
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
+		recovery.NewRequests(),
 		ControllerOptions{ActionTimeout: time.Second},
 	)
 
@@ -238,7 +238,7 @@ func TestControllerClassifiesUnmanagedDeviceAsTerminal(t *testing.T) {
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
+		recovery.NewRequests(),
 		ControllerOptions{ActionTimeout: time.Second},
 	)
 
@@ -257,7 +257,7 @@ func TestControllerClassifiesObservationFailureAsRestartable(t *testing.T) {
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
+		recovery.NewRequests(),
 		ControllerOptions{ActionTimeout: time.Second},
 	)
 
@@ -274,7 +274,7 @@ func TestControllerCancellationIsNormalShutdown(t *testing.T) {
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
+		recovery.NewRequests(),
 		ControllerOptions{ActionTimeout: time.Second},
 	)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -292,7 +292,7 @@ func TestControllerCancelsSourceAfterFailure(t *testing.T) {
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
+		recovery.NewRequests(),
 		ControllerOptions{ActionTimeout: time.Second},
 	)
 
@@ -309,7 +309,7 @@ func TestControllerCancelsSourceAfterFailure(t *testing.T) {
 func TestNewControllerValidatesDependencies(t *testing.T) {
 	source := newFakeTransitionSource(StageStopped)
 	provisioning := &fakeProvisioningManager{}
-	requests := recoveryinput.NewRequests()
+	requests := recovery.NewRequests()
 	if _, err := NewController(nil, provisioning, requests, ControllerOptions{ActionTimeout: time.Second}); err == nil {
 		t.Fatal("nil transition source accepted")
 	}
