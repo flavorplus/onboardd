@@ -16,8 +16,9 @@ Phases 0–8 established and hardware-tested the complete appliance path:
 - reproducible ARM64/AMD64 releases, Debian packaging, hardened systemd service, and
   verified install/upgrade/rollback/remove/purge behavior.
 
-Accepted hardware runs include a Raspberry Pi Zero 2 W and Raspberry Pi 4 on
-Raspberry Pi OS/Debian Trixie. The detailed historical phase checklists were removed
+Development runs on a Raspberry Pi Zero 2 W and Raspberry Pi 4 with Raspberry Pi
+OS/Debian Trixie exercised the whole path. That is not the same as the formal candidate
+validation Phase 9 covers, where every row of the support matrix is still untested. The detailed historical phase checklists were removed
 after acceptance; durable behavior is documented in Architecture, Configuration,
 Development, and Installation.
 

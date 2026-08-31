@@ -3,6 +3,9 @@
 
 # Go build and test output
 /bin/
+
+# `go build .` drops the executable here; the VS Code tasks build into /bin.
+/onboardd
 /dist/
 *.test
 *.out

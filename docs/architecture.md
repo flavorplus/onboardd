@@ -8,8 +8,8 @@ NetworkManager profiles, or general router/firewall policy.
 
 The daemon is intentionally one process and one embedded web application. Linux
 integration uses D-Bus for NetworkManager and Avahi, a Unix socket for manual recovery,
-a small NetworkManager dnsmasq fragment for captive DNS, and an interface-scoped
-nftables table for port redirection.
+a small NetworkManager dnsmasq fragment for captive DNS, and a dedicated nftables table
+whose redirect rule is scoped to the setup interface.
 
 ## Network modes
 
@@ -29,7 +29,7 @@ mode file. Owned profiles carry application metadata in `user.data`:
 onboardd.owner = onboardd
 onboardd.role = infrastructure | standalone | provisioning
 onboardd.schema = 1
-onboardd.pending = true | false
+onboardd.pending = true          # written only while uncommitted; absent otherwise
 ```
 
 Profile names are for people; ownership and role decisions use metadata. Foreign
@@ -87,28 +87,41 @@ The API allows one network operation at a time. Operation results remain queryab
 after a browser disconnect, so the normal browser can reconnect through mDNS after the
 radio transition.
 
-Static frontend files, the captive landing page, `/appearance.json`, and the optional
-`/appearance/logo` are public. Appearance contains only product names, setup copy,
-validated colors, and the logo URL so the login view can use the same styling as the
-authenticated application. Every `/api/v1/` route except session creation requires an
+Static frontend files, the captive landing page, `/appearance.json`, the optional
+`/appearance/logo`, and `/healthz` are public. Appearance contains only product names,
+setup copy, validated colors, and the logo URL so the login view can use the same
+styling as the authenticated application. `/healthz` is mounted outside `/api/v1/` so a
+supervisor can poll it without a session; it returns only the redaction-safe lifecycle
+snapshot — status, stage, mode, reason, sequence — and never configuration, profile
+identifiers, or error text. Every `/api/v1/` route except session creation requires an
 opaque administrator session cookie. The cookie is HTTP-only, strict same-site, scoped
-to `/api/v1/`, and replaced whenever onboardd starts. The login password comes from a
-root-only file. Mutations additionally require the per-process CSRF token and an
+to `/api/v1/`, and replaced whenever onboardd starts. The login password comes from a file
+that must not be readable or writable by group or other users; onboardd checks the
+mode, not the owner. Mutations additionally require the per-process CSRF token and an
 accepted request origin. This prevents casual changes by other users of a shared LAN;
 the deliberately plain-HTTP captive workflow does not provide transport encryption.
 
 ## Recovery and service lifecycle
 
-`onboardd recover` sends an authenticated local request over
-`/run/onboardd/control.sock`. The running controller enters provisioning through its
-normal state machine; there is no second standalone setup process.
+`onboardd recover` sends a request over `/run/onboardd/control.sock`. The request
+carries no credential: the socket is created mode 0600 inside a 0700 runtime directory,
+so authority comes from filesystem permissions rather than authentication.
+
+The running controller applies the request directly rather than waiting for the state
+machine to produce it, then suppresses any contradicting engine output until the engine
+catches up. There is no second standalone setup process.
 
 The systemd service uses `Type=notify`, readiness notification, status updates, and a
-watchdog heartbeat gated on the controller and HTTP listener health. Structured
-lifecycle logs avoid credentials and are intended for `journalctl`.
+watchdog heartbeat. The heartbeat stops once the process reaches a terminal state --
+stopping, stopped, or failed. A component in bounded retry reports as recovering and
+keeps the heartbeat alive, so the watchdog catches a stuck or dead process rather than a
+degraded one. Structured lifecycle logs avoid credentials and are intended for
+`journalctl`.
 
-Normal shutdown removes temporary captive resources and pending candidates. Durable
-infrastructure/standalone profiles and foreign profiles remain untouched.
+Normal shutdown removes temporary captive resources. Pending candidates are removed
+by the next startup, not by shutdown, so an interrupted transition is cleaned up even
+after a power cut. Durable infrastructure/standalone profiles and foreign profiles remain
+untouched.
 
 ## Code map
 
@@ -123,6 +136,7 @@ internal/recovery          protected transitions and recovery control socket
 internal/setupflow         product-facing setup operations
 internal/webui             API, branding/handoff, and embedded frontend
 internal/appconfig         strict TOML, templates, and device identity
+internal/connectivity      the requirement policy the other packages evaluate against
 internal/discovery         Avahi hostname/service publication
 internal/observability     health, redacted lifecycle events, and the HTTP and
                            systemd-notify transports that publish them
@@ -141,8 +155,9 @@ need.
 - Validate configuration and access-point settings before changing network state.
 - Never include Wi-Fi passwords in TOML, CLI arguments, API responses without explicit
   policy, or logs.
-- Require administrator authentication for all setup API data and operations; keep
-  only session creation and presentation-only appearance resources public.
+- Require administrator authentication for all setup API data and operations; keep only
+  session creation, presentation-only appearance resources, and the redaction-safe
+  health snapshot public.
 - Restrict profile mutation to verified onboardd ownership, except explicit activation
   of a user-selected existing profile.
 - Prefer idempotent cleanup; an already absent temporary resource is success.

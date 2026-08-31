@@ -17,7 +17,7 @@ package.
 Extract the release archive and verify the package checksum:
 
 ```bash
-tar -xf onboardd-v0.1.0.tar
+tar -xf onboardd-v0.1.0.tar.gz
 cd v0.1.0
 grep '_arm64.deb$' DEBSHA256SUMS | sha256sum --check -
 sudo apt install ./onboardd_0.1.0-1_arm64.deb
@@ -50,7 +50,9 @@ sudoedit /etc/onboardd/provisioning-password
 sudoedit /etc/onboardd/standalone-password
 ```
 
-Use a unique 12–256 byte administrator password and 8–63 character WPA passphrases.
+Use a unique 12–256 byte administrator password and 8–63 character WPA passphrases. A
+passphrase of exactly 64 hexadecimal characters is also accepted, and is treated as a
+raw pairwise master key rather than a passphrase.
 Keep one trailing newline at most. Validate file ownership and mode:
 
 ```bash
