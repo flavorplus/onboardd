@@ -60,9 +60,16 @@ infrastructure_enabled = true
 standalone_enabled = true
 ```
 
-`requirement = "local"` accepts an activated device with a usable IPv4 address.
-`"internet"` additionally requires NetworkManager connectivity `FULL`. At least one
-final mode must be enabled.
+`requirement = "local"` accepts an activated device that has an IPv4 address. Note that
+any address counts, including a link-local `169.254.x.x` one, so `"local"` means
+"addressed", not "reachable". `"internet"` additionally requires NetworkManager
+connectivity `FULL`. At least one final mode must be enabled.
+
+The two enable flags govern what the setup UI offers, not what the reconciler will
+adopt. Setting `standalone_enabled = false` removes standalone from the API and skips
+loading its password file, but a standalone profile created earlier still carries its
+own NetworkManager autoconnect metadata, and the reconciler honours that at boot. To
+retire a mode on a device that has already used it, remove the profile as well.
 
 ### Provisioning and standalone
 
@@ -115,15 +122,25 @@ true.
 
 ## Templates
 
-These fields support Go-template placeholders:
+These fields support `{{ .Field }}` placeholders. The syntax resembles Go templates but
+the implementation is field substitution only — there are no functions, pipelines,
+conditionals, or loops, and an unknown field name is a startup error rather than an empty
+string. The fields are:
 
 - provisioning and standalone SSIDs;
 - branding title and subtitle;
 - application label, URL, and health-check URL.
 
 Available values are `.ProductName`, `.DeviceName`, `.DeviceID`, and `.Hostname`.
-`DeviceID` is derived from stable machine identity; `Hostname` is read from Avahi.
-Only simple field substitution is allowed.
+`DeviceID` is derived from stable machine identity and is always 8 characters;
+`Hostname` is read from Avahi.
+
+A rendered SSID must be 1–32 bytes, valid UTF-8, and free of control characters, and
+that is checked at startup rather than when the file is written. With the default
+provisioning template `{{ .ProductName }}-Setup-{{ .DeviceID }}`, the fixed text and
+device identifier consume 15 bytes, so a `product.name` longer than 17 bytes makes the
+daemon fail to start with `network.provisioning.ssid must contain between 1 and 32 bytes
+after template rendering`. Shorten the name or override the SSID template.
 
 ## Operational overrides
 

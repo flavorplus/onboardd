@@ -1,4 +1,4 @@
-// Package web provides the product-facing setup HTTP API.
+// Package webui provides the product-facing setup HTTP API.
 package webui
 
 import (

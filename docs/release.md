@@ -35,15 +35,37 @@ Record these values before testing:
 
 Run the GitHub Actions workflow manually from the release commit and enter a candidate
 version such as `v1.0.0-rc.1`. The package builder validates the version before doing
-any release work. Download its single release archive and verify both manifests before
-use:
+any release work. Dispatch from a branch, not a tag: when the run's ref is a tag, the
+tag name wins and the version entered in the form is discarded.
+
+Download the single release artifact and verify both manifests before use. GitHub wraps
+uploaded artifacts in a zip, so there are two layers to unpack:
 
 ```bash
+gh run download <run-id> --name onboardd-v1.0.0-rc.1
 tar -xf onboardd-v1.0.0-rc.1.tar.gz
 cd v1.0.0-rc.1
 sha256sum --check SHA256SUMS
 sha256sum --check DEBSHA256SUMS
 ```
+
+Downloading through the Actions web UI gives `onboardd-v1.0.0-rc.1.zip` instead; unzip
+it first, then continue from the `tar -xf` line.
+
+A pre-release version is mapped to a Debian-legal version, so the candidate packages are
+not named after the tag. `v1.0.0-rc.1` produces:
+
+```text
+onboardd_1.0.0~rc.1-1_arm64.deb
+onboardd_1.0.0~rc.1-1_amd64.deb
+```
+
+The `v` is dropped and the pre-release hyphen becomes `~`, which sorts below the eventual
+`1.0.0-1`. A stable `v1.0.0` produces `onboardd_1.0.0-1_arm64.deb`.
+
+Artifacts are retained for 14 days. If hardware validation runs longer than that, record
+the SHA-256 values in the candidate table above before the artifact expires — they are
+what ties a sign-off to a specific build.
 
 ## Platform support matrix
 

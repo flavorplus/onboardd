@@ -1,4 +1,4 @@
-// Package config loads and validates onboardd's product configuration.
+// Package appconfig loads and validates onboardd's product configuration.
 package appconfig
 
 import (

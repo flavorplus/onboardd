@@ -8,6 +8,10 @@ the device's main application.
 Anthias and InkyPi are reference configurations; neither product is coupled to the
 daemon.
 
+It runs on a systemd host where NetworkManager manages the Wi-Fi interface, alongside
+Avahi, nftables, and NetworkManager's shared-mode dnsmasq. The Debian package declares
+these; see [Installation](docs/installation.md) for the full host requirements.
+
 ## What it does
 
 - Talks directly to NetworkManager over D-Bus; production code never invokes `nmcli`.
@@ -52,19 +56,24 @@ Open the repository as a folder:
 code ~/GitHub/onboardd
 ```
 
-The checked-in VS Code configuration provides build, test, vet, frontend, and release
-tasks. Equivalent shell commands are:
+The checked-in VS Code configuration provides build, test, vet, lint, format,
+frontend, and release tasks, plus a `Check: all` task that runs the sequence CI
+runs. Equivalent shell commands are:
 
 ```bash
 go build .
-go test ./...
+go test -race ./...
 go vet ./...
+golangci-lint run ./...
 go run . --version
 
 cd frontend
 npm test
 npm run build
 ```
+
+`golangci-lint` is a required CI gate; its configuration and the reasoning behind
+each enabled and disabled linter are in [.golangci.yml](.golangci.yml).
 
 The frontend development server includes a simulated device, so browser work can be
 done safely on macOS without changing the Mac's network. See

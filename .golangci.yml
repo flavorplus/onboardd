@@ -57,8 +57,8 @@ linters:
       # real races rather than reveal them.
     - nilerr # 7 findings, 7 false positives. Every one is the deliberate
       # "context cancelled => clean shutdown" idiom, e.g.
-      # systemd/notifier.go:131 which carries a comment saying so.
-    - containedctx # 1 finding: setup.Service deliberately owns its runtime
+      # observability/notifier.go which carries a comment saying so.
+    - containedctx # 1 finding: setupflow.Service deliberately owns its runtime
       # context because it supervises background operations.
     - goconst # 73 findings, 69 of them repeated literals in test fixtures.
     - lll # line length is gofumpt's job
@@ -109,7 +109,7 @@ linters:
         - name: package-comments
           disabled: true # main.go lacks one; tracked as a follow-up
         - name: exported
-          disabled: true # 12 exported types in config/, state/ and web/ lack
+          disabled: true # 12 exported types in appconfig/, appliance/ and webui/ lack
           # doc comments; tracked as a follow-up rather than
           # bundled into this config-only change.
 
@@ -215,7 +215,7 @@ linters:
       # each exclusion as its refactor lands; new code is held to 15.
       - path: internal/cli/run\.go
         linters: [gocyclo]
-        text: "runManagedAppliance" # 33
+        text: "runManagedAppliance" # 21
       - path: internal/appliance/engine\.go
         linters: [gocyclo]
         text: "\\(\\*Engine\\).run" # 31
@@ -234,18 +234,6 @@ linters:
       - path: internal/captive/server\.go
         linters: [gocyclo]
         text: "\\(\\*HTTPService\\).Run" # 16
-      - path: internal/appliance/engine\.go
-        linters: [gocyclo]
-        text: "evaluate" # 15
-      - path: internal/setupflow/network\.go
-        linters: [gocyclo]
-        text: "CurrentMode" # 15
-      - path: internal/networkmanager/wifi\.go
-        linters: [gocyclo]
-        text: "\\(\\*Client\\).Scan" # 15
-      - path: internal/networkmanager/types\.go
-        linters: [gocyclo]
-        text: "\\(DeviceState\\).String" # 14
 
       # Test files may be long and repetitive by nature.
       - path: _test\.go

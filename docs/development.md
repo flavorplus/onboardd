@@ -3,7 +3,9 @@
 ## Requirements
 
 - Go version from `.go-version`;
-- Node.js and npm for frontend work;
+- `golangci-lint` v2 (CI pins v2.13.2; a v1 binary rejects this repository's config);
+- Node.js and npm for frontend work. CI uses Node 26; `npm test` runs TypeScript
+  directly, so it needs a Node new enough to strip types;
 - VS Code with the recommended extensions (optional);
 - Debian packaging tools only when building `.deb` files.
 
@@ -13,15 +15,29 @@ then the Go executable. Run/Debug configurations start the root Go package.
 ## Everyday checks
 
 ```bash
-gofmt -w .
-go test ./...
-go test -race ./...
+golangci-lint fmt ./...
+go test -race -shuffle=on ./...
 go vet ./...
+golangci-lint run ./...
 go build .
 ```
 
-The **Check: all** VS Code task also validates shell scripts, tests/builds the frontend,
-and cross-builds Linux ARM64 and AMD64 binaries.
+Use `golangci-lint fmt`, not `gofmt`. The repository is checked with `gofumpt` and
+`goimports`, and `golangci-lint run` reports a formatting difference as a failure, so
+`gofmt` alone can leave code that passes locally and fails CI.
+
+Run the tests the way CI does, with `-race -shuffle=on`. Shuffling is what catches an
+order-dependent test before it reaches CI.
+
+The **Check: all** VS Code task runs format, test, vet and lint, then validates shell
+scripts, tests/builds the frontend, and cross-builds Linux ARM64 and AMD64 binaries.
+Note that its first step rewrites files in place.
+
+CI additionally enforces three gates this list does not cover: `go mod tidy` leaves
+`go.mod`/`go.sum` unchanged, `govulncheck ./...` finds nothing reachable, and
+`npm audit --omit=dev` reports no high-severity advisory. The linter configuration, and
+the reasoning behind every enabled and disabled linter, is in
+[.golangci.yml](../.golangci.yml).
 
 Tests use fake consumer-side interfaces and in-memory listeners. NetworkManager, Avahi,
 nftables, dnsmasq, systemd, and Unix-socket integration require Linux hardware or a
