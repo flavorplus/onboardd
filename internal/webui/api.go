@@ -1,5 +1,5 @@
 // Package web provides the product-facing setup HTTP API.
-package web
+package webui
 
 import (
 	"context"

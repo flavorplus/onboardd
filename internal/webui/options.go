@@ -1,4 +1,4 @@
-package web
+package webui
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/flavorplus/onboardd/internal/config"
+	"github.com/flavorplus/onboardd/internal/appconfig"
 )
 
 const (

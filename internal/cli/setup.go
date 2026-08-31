@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/flavorplus/onboardd/internal/config"
+	"github.com/flavorplus/onboardd/internal/appconfig"
 	"github.com/flavorplus/onboardd/internal/connectivity"
 	"github.com/flavorplus/onboardd/internal/discovery"
 	"github.com/flavorplus/onboardd/internal/networkmanager"
 	"github.com/flavorplus/onboardd/internal/recovery"
 	setupflow "github.com/flavorplus/onboardd/internal/setup"
-	webui "github.com/flavorplus/onboardd/internal/web"
+	"github.com/flavorplus/onboardd/internal/webui"
 )
 
 const (

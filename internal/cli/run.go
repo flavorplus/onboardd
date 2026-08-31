@@ -18,7 +18,7 @@ import (
 	"github.com/flavorplus/onboardd/internal/observability"
 	"github.com/flavorplus/onboardd/internal/recovery"
 	setupflow "github.com/flavorplus/onboardd/internal/setup"
-	webui "github.com/flavorplus/onboardd/internal/web"
+	"github.com/flavorplus/onboardd/internal/webui"
 )
 
 const (

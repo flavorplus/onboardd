@@ -51,7 +51,7 @@ jobs:
         run: |
           npm test --prefix frontend
           npm run build --prefix frontend
-          git diff --exit-code -- internal/web/dist
+          git diff --exit-code -- internal/webui/dist
 
       - name: Test Go with race detection
         run: go test -race -shuffle=on ./...

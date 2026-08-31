@@ -1,5 +1,5 @@
 // Package config loads and validates onboardd's product configuration.
-package config
+package appconfig
 
 import (
 	"errors"

@@ -122,7 +122,7 @@ internal/captive           provisioning, DNS, redirect, and HTTP listener
 internal/recovery          protected transitions and recovery control socket
 internal/setup             product-facing setup operations
 internal/web               API, branding/handoff, and embedded frontend
-internal/config            strict TOML, templates, and device identity
+internal/appconfig            strict TOML, templates, and device identity
 internal/discovery         Avahi hostname/service publication
 internal/observability     health, redacted lifecycle events, and the HTTP and
                            systemd-notify transports that publish them
