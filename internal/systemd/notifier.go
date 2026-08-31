@@ -142,7 +142,7 @@ func (notifier *Notifier) run(
 				return fmt.Errorf("send systemd health status: %w", err)
 			}
 		case <-watchdog:
-			if !health.Snapshot().WatchdogHealthy() {
+			if !health.Snapshot().Healthy {
 				continue
 			}
 			if err := notifier.notify("WATCHDOG=1"); err != nil {
