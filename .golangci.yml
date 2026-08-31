@@ -118,7 +118,7 @@ linters:
     rules:
       # "Avahi" is a proper noun; ST1005 does not recognise it. Every flagged
       # string in these three files begins with it.
-      - path: (internal/cli/run|internal/discovery/avahi|internal/web/handoff)\.go
+      - path: (internal/cli/run|internal/discovery/avahi|internal/web/options)\.go
         linters: [staticcheck]
         text: "ST1005"
 
@@ -179,7 +179,7 @@ linters:
         text: "G204"
 
       # Paths come from the root-owned TOML config; reading them is the point.
-      - path: (internal/cli/setup|internal/config/identity|internal/web/logo)\.go
+      - path: (internal/cli/setup|internal/config/template|internal/web/options)\.go
         linters: [gosec]
         text: "G304"
 
@@ -197,7 +197,7 @@ linters:
 
       # /run/onboardd and the dnsmasq drop-in directory must stay traversable;
       # the socket and files inside carry the restrictive modes.
-      - path: (internal/recovery/control|internal/captive/dnsmasq)\.go
+      - path: (internal/recovery/control|internal/captive/provisioning)\.go
         linters: [gosec]
         text: "G301"
 
@@ -225,7 +225,7 @@ linters:
       - path: internal/captive/http\.go
         linters: [gocyclo]
         text: "NewHTTPHandler" # 20
-      - path: internal/web/logo\.go
+      - path: internal/web/options\.go
         linters: [gocyclo]
         text: "validateSVG" # 18
       - path: internal/networkmanager/settings\.go
