@@ -27,123 +27,61 @@ func (c *Client) property(
 	return value, nil
 }
 
-func (c *Client) stringProperty(
-	ctx context.Context,
-	path dbus.ObjectPath,
-	interfaceName string,
-	propertyName string,
-) (string, error) {
-	value, err := c.property(ctx, path, interfaceName, propertyName)
-	if err != nil {
-		return "", err
-	}
-	result, ok := value.Value().(string)
+// convertProperty asserts a D-Bus variant to T. The wanted description is passed
+// in rather than derived from T because the messages predate this helper and do
+// not match Go's type names: uint8 is reported as "byte", []byte as "byte array"
+// and dbus.ObjectPath as "object path".
+func convertProperty[T any](value dbus.Variant, interfaceName, propertyName, wanted string) (T, error) {
+	result, ok := value.Value().(T)
 	if !ok {
-		return "", propertyTypeError(interfaceName, propertyName, "string", value.Value())
+		var zero T
+		return zero, propertyTypeError(interfaceName, propertyName, wanted, value.Value())
 	}
 	return result, nil
 }
 
-func (c *Client) boolProperty(
+// clientProperty reads one property and converts it, so the typed accessors below
+// stay one line each.
+func clientProperty[T any](
 	ctx context.Context,
+	c *Client,
 	path dbus.ObjectPath,
-	interfaceName string,
-	propertyName string,
-) (bool, error) {
+	interfaceName, propertyName, wanted string,
+) (T, error) {
 	value, err := c.property(ctx, path, interfaceName, propertyName)
 	if err != nil {
-		return false, err
+		var zero T
+		return zero, err
 	}
-	result, ok := value.Value().(bool)
-	if !ok {
-		return false, propertyTypeError(interfaceName, propertyName, "bool", value.Value())
-	}
-	return result, nil
+	return convertProperty[T](value, interfaceName, propertyName, wanted)
 }
 
-func (c *Client) uint32Property(
-	ctx context.Context,
-	path dbus.ObjectPath,
-	interfaceName string,
-	propertyName string,
-) (uint32, error) {
-	value, err := c.property(ctx, path, interfaceName, propertyName)
-	if err != nil {
-		return 0, err
-	}
-	result, ok := value.Value().(uint32)
-	if !ok {
-		return 0, propertyTypeError(interfaceName, propertyName, "uint32", value.Value())
-	}
-	return result, nil
+func (c *Client) stringProperty(ctx context.Context, p dbus.ObjectPath, iface, name string) (string, error) {
+	return clientProperty[string](ctx, c, p, iface, name, "string")
 }
 
-func (c *Client) int64Property(
-	ctx context.Context,
-	path dbus.ObjectPath,
-	interfaceName string,
-	propertyName string,
-) (int64, error) {
-	value, err := c.property(ctx, path, interfaceName, propertyName)
-	if err != nil {
-		return 0, err
-	}
-	result, ok := value.Value().(int64)
-	if !ok {
-		return 0, propertyTypeError(interfaceName, propertyName, "int64", value.Value())
-	}
-	return result, nil
+func (c *Client) boolProperty(ctx context.Context, p dbus.ObjectPath, iface, name string) (bool, error) {
+	return clientProperty[bool](ctx, c, p, iface, name, "bool")
 }
 
-func (c *Client) byteProperty(
-	ctx context.Context,
-	path dbus.ObjectPath,
-	interfaceName string,
-	propertyName string,
-) (uint8, error) {
-	value, err := c.property(ctx, path, interfaceName, propertyName)
-	if err != nil {
-		return 0, err
-	}
-	result, ok := value.Value().(uint8)
-	if !ok {
-		return 0, propertyTypeError(interfaceName, propertyName, "byte", value.Value())
-	}
-	return result, nil
+func (c *Client) uint32Property(ctx context.Context, p dbus.ObjectPath, iface, name string) (uint32, error) {
+	return clientProperty[uint32](ctx, c, p, iface, name, "uint32")
 }
 
-func (c *Client) bytesProperty(
-	ctx context.Context,
-	path dbus.ObjectPath,
-	interfaceName string,
-	propertyName string,
-) ([]byte, error) {
-	value, err := c.property(ctx, path, interfaceName, propertyName)
-	if err != nil {
-		return nil, err
-	}
-	result, ok := value.Value().([]byte)
-	if !ok {
-		return nil, propertyTypeError(interfaceName, propertyName, "byte array", value.Value())
-	}
-	return result, nil
+func (c *Client) int64Property(ctx context.Context, p dbus.ObjectPath, iface, name string) (int64, error) {
+	return clientProperty[int64](ctx, c, p, iface, name, "int64")
 }
 
-func (c *Client) objectPathProperty(
-	ctx context.Context,
-	path dbus.ObjectPath,
-	interfaceName string,
-	propertyName string,
-) (dbus.ObjectPath, error) {
-	value, err := c.property(ctx, path, interfaceName, propertyName)
-	if err != nil {
-		return "", err
-	}
-	result, ok := value.Value().(dbus.ObjectPath)
-	if !ok {
-		return "", propertyTypeError(interfaceName, propertyName, "object path", value.Value())
-	}
-	return result, nil
+func (c *Client) byteProperty(ctx context.Context, p dbus.ObjectPath, iface, name string) (uint8, error) {
+	return clientProperty[uint8](ctx, c, p, iface, name, "byte")
+}
+
+func (c *Client) bytesProperty(ctx context.Context, p dbus.ObjectPath, iface, name string) ([]byte, error) {
+	return clientProperty[[]byte](ctx, c, p, iface, name, "byte array")
+}
+
+func (c *Client) objectPathProperty(ctx context.Context, p dbus.ObjectPath, iface, name string) (dbus.ObjectPath, error) {
+	return clientProperty[dbus.ObjectPath](ctx, c, p, iface, name, "object path")
 }
 
 func (c *Client) deviceStateReason(
