@@ -1,5 +1,6 @@
 // Package observability provides redaction-safe lifecycle events and health state for
-// the long-running appliance process.
+// the long-running appliance process, and both transports that publish it: an HTTP
+// liveness endpoint and the systemd notification protocol.
 package observability
 
 import (
