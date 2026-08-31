@@ -47,6 +47,18 @@ func ValidateAdminPassword(password string) error {
 	return nil
 }
 
+// Written from more than one handler; the code is what the browser switches on.
+var (
+	failureInvalidProfileID = setup.Failure{
+		Code:    "invalid_profile_id",
+		Message: "The saved network identifier is invalid.",
+	}
+	failureRequestNotAllowed = setup.Failure{
+		Code:    "request_not_allowed",
+		Message: "Refresh the setup page and try again.",
+	}
+)
+
 type setupService interface {
 	Bootstrap(context.Context) (setup.Bootstrap, error)
 	Networks(context.Context) ([]setup.Network, error)
@@ -304,10 +316,7 @@ func (api *API) deleteKnownNetwork(response http.ResponseWriter, request *http.R
 	}
 	uuid := strings.ToLower(request.PathValue("uuid"))
 	if !validProfileUUID(uuid) {
-		writeError(response, http.StatusBadRequest, setup.Failure{
-			Code:    "invalid_profile_id",
-			Message: "The saved network identifier is invalid.",
-		})
+		writeError(response, http.StatusBadRequest, failureInvalidProfileID)
 		return
 	}
 	if err := api.service.ForgetKnownNetwork(request.Context(), uuid); err != nil {
@@ -325,10 +334,7 @@ func (api *API) postKnownNetwork(response http.ResponseWriter, request *http.Req
 	}
 	uuid := strings.ToLower(request.PathValue("uuid"))
 	if !validProfileUUID(uuid) {
-		writeError(response, http.StatusBadRequest, setup.Failure{
-			Code:    "invalid_profile_id",
-			Message: "The saved network identifier is invalid.",
-		})
+		writeError(response, http.StatusBadRequest, failureInvalidProfileID)
 		return
 	}
 	operation, err := api.service.StartKnownNetwork(request.Context(), uuid)
@@ -336,11 +342,7 @@ func (api *API) postKnownNetwork(response http.ResponseWriter, request *http.Req
 		writeServiceError(response, err)
 		return
 	}
-	if err := api.acceptOperation(response, operation); err != nil {
-		api.service.CancelPendingOperation(operation.ID)
-		return
-	}
-	api.service.BeginOperation(operation.ID)
+	api.startOperation(response, operation)
 }
 
 type connectionPayload struct {
@@ -372,6 +374,13 @@ func (api *API) postConnection(response http.ResponseWriter, request *http.Reque
 		writeServiceError(response, err)
 		return
 	}
+	api.startOperation(response, operation)
+}
+
+// startOperation tells the client about the operation before any work begins, and
+// releases the transition slot if that response never reached them. The ordering
+// matters: work must not start until the client holds the operation id.
+func (api *API) startOperation(response http.ResponseWriter, operation setup.Operation) {
 	if err := api.acceptOperation(response, operation); err != nil {
 		api.service.CancelPendingOperation(operation.ID)
 		return
@@ -426,11 +435,7 @@ func (api *API) postStandalone(response http.ResponseWriter, request *http.Reque
 		writeServiceError(response, err)
 		return
 	}
-	if err := api.acceptOperation(response, operation); err != nil {
-		api.service.CancelPendingOperation(operation.ID)
-		return
-	}
-	api.service.BeginOperation(operation.ID)
+	api.startOperation(response, operation)
 }
 
 func (api *API) getOperation(response http.ResponseWriter, request *http.Request) {
@@ -454,10 +459,7 @@ func (api *API) allowMutation(response http.ResponseWriter, request *http.Reques
 		[]byte(provided),
 		[]byte(api.csrfToken),
 	) != 1 {
-		writeError(response, http.StatusForbidden, setup.Failure{
-			Code:    "request_not_allowed",
-			Message: "Refresh the setup page and try again.",
-		})
+		writeError(response, http.StatusForbidden, failureRequestNotAllowed)
 		return false
 	}
 	return api.allowOrigin(response, request)
@@ -472,10 +474,7 @@ func (api *API) allowOrigin(response http.ResponseWriter, request *http.Request)
 	if err == nil && (normalized == api.canonicalOrigin || normalized == requestOrigin(request)) {
 		return true
 	}
-	writeError(response, http.StatusForbidden, setup.Failure{
-		Code:    "request_not_allowed",
-		Message: "Refresh the setup page and try again.",
-	})
+	writeError(response, http.StatusForbidden, failureRequestNotAllowed)
 	return false
 }
 

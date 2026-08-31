@@ -176,14 +176,7 @@ func runManagedAppliance(
 			MaxRestarts:     runtimeMaxRestarts,
 			RestartDelay:    runtimeRestartDelay,
 			ShutdownTimeout: applianceCleanupTimeout,
-			OnRetry: func(ctx context.Context, attempt, maximum int) {
-				lifecycle.ComponentRetry(
-					ctx,
-					observability.ComponentHTTP,
-					attempt,
-					maximum,
-				)
-			},
+			OnRetry:         retryReporter(lifecycle, observability.ComponentHTTP),
 			OnRecovered: func(ctx context.Context, _ int) {
 				lifecycle.ComponentRecovered(ctx, observability.ComponentHTTP)
 			},
@@ -270,14 +263,7 @@ func runManagedAppliance(
 	supervisor, err := appliance.NewSupervisor(controller, appliance.RetryConfig{
 		MaxRestarts:  runtimeMaxRestarts,
 		RestartDelay: runtimeRestartDelay,
-		OnRetry: func(ctx context.Context, attempt, maximum int) {
-			lifecycle.ComponentRetry(
-				ctx,
-				observability.ComponentReconciler,
-				attempt,
-				maximum,
-			)
-		},
+		OnRetry:      retryReporter(lifecycle, observability.ComponentReconciler),
 	})
 	if err != nil {
 		return errors.Join(err, stopStartupResources())
@@ -374,6 +360,17 @@ func runManagedAppliance(
 	}
 	fmt.Fprintln(stdout, "Onboardd appliance stopped and temporary resources were removed")
 	return nil
+}
+
+// retryReporter adapts a component identity to the OnRetry callback shape shared
+// by the HTTP listener and the reconciler supervisors.
+func retryReporter(
+	lifecycle *observability.Lifecycle,
+	component observability.Component,
+) func(context.Context, int, int) {
+	return func(ctx context.Context, attempt, maximum int) {
+		lifecycle.ComponentRetry(ctx, component, attempt, maximum)
+	}
 }
 
 func stopManagedResources(

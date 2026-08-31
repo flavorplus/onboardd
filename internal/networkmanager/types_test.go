@@ -1,6 +1,10 @@
 package networkmanager
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/flavorplus/onboardd/internal/connectivity"
+)
 
 func TestDeviceStateString(t *testing.T) {
 	tests := []struct {
@@ -91,5 +95,56 @@ func TestDeviceStateReasonString(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestConnectivityInternetState(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    Connectivity
+		expected connectivity.InternetState
+	}{
+		{name: "unknown", value: ConnectivityUnknown, expected: connectivity.InternetUnknown},
+		{name: "none", value: ConnectivityNone, expected: connectivity.InternetNone},
+		{name: "portal", value: ConnectivityPortal, expected: connectivity.InternetPortal},
+		{name: "limited", value: ConnectivityLimited, expected: connectivity.InternetLimited},
+		{name: "full", value: ConnectivityFull, expected: connectivity.InternetFull},
+		// An enum value NetworkManager may add later must not be read as usable
+		// connectivity.
+		{name: "unmapped value", value: Connectivity(99), expected: connectivity.InternetUnknown},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.value.InternetState(); got != test.expected {
+				t.Fatalf("Connectivity(%d).InternetState() = %q, expected %q", test.value, got, test.expected)
+			}
+		})
+	}
+}
+
+func TestStatusObservation(t *testing.T) {
+	status := Status{
+		Connectivity: ConnectivityFull,
+		Device: Device{
+			State:         DeviceStateActivated,
+			IPv4Addresses: []string{"192.168.1.10"},
+		},
+	}
+	observation := status.Observation()
+	if !observation.Activated || !observation.HasLocalAddress ||
+		observation.Internet != connectivity.InternetFull {
+		t.Fatalf("activated status observation = %+v", observation)
+	}
+
+	// A device that is not activated, and one with no address, must both be
+	// reported as such -- policy rejects each on its own.
+	notActivated := Status{Device: Device{State: DeviceStateDisconnected}}.Observation()
+	if notActivated.Activated || notActivated.HasLocalAddress {
+		t.Fatalf("disconnected status observation = %+v", notActivated)
+	}
+	noAddress := Status{Device: Device{State: DeviceStateActivated}}.Observation()
+	if !noAddress.Activated || noAddress.HasLocalAddress {
+		t.Fatalf("addressless status observation = %+v", noAddress)
 	}
 }

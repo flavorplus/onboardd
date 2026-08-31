@@ -108,3 +108,38 @@ type ConflictError struct {
 }
 
 func (err *ConflictError) Error() string { return "another setup operation is already running" }
+
+// The failures below are returned from more than one place. The code is the
+// contract the browser switches on and the message is user-facing, so both are
+// stated once here rather than restated at every call site. A PublicError is
+// only ever read through errors.As, never mutated, so sharing one is safe.
+var (
+	errModeUnavailableNetwork = NewPublicError(
+		"mode_unavailable",
+		"Connecting to a Wi-Fi network is not available.",
+	)
+	errModeUnavailableStandalone = NewPublicError(
+		"mode_unavailable",
+		"Standalone mode is not available.",
+	)
+	errCurrentConnectionUnavailable = NewPublicError(
+		"current_connection_unavailable",
+		"The device is not ready to change networks. Please try again.",
+	)
+	errActiveNetwork = NewPublicError(
+		"active_network",
+		"The device is already connected to this network.",
+	)
+	errNetworkReadOnly = NewPublicError(
+		"network_read_only",
+		"This network profile is managed outside onboardd and cannot be activated here.",
+	)
+	errKnownNetworkNotFound = NewPublicError(
+		"known_network_not_found",
+		"This saved network no longer exists.",
+	)
+	errProfileChangeInProgress = NewPublicError(
+		"profile_change_in_progress",
+		"Another saved network is already being updated. Please try again.",
+	)
+)

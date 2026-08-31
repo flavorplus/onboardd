@@ -166,11 +166,7 @@ func (transition *Infrastructure) attempt(
 			return networkmanager.Activation{}, transition.rollback(options, checkpoint, activation.UUID, err)
 		}
 	}
-	result := connectivity.Evaluate(options.Requirement, connectivity.Observation{
-		Activated:       status.Device.State == networkmanager.DeviceStateActivated,
-		HasLocalAddress: len(status.Device.IPv4Addresses) > 0,
-		Internet:        normalizeConnectivity(status.Connectivity),
-	})
+	result := connectivity.Evaluate(options.Requirement, status.Observation())
 	if !result.Accepted {
 		err = fmt.Errorf("candidate does not satisfy %s requirement: %s", options.Requirement, result.Reason)
 		return networkmanager.Activation{}, transition.rollback(options, checkpoint, activation.UUID, err)
@@ -296,20 +292,5 @@ func protectedOptions(
 		PreviousUUID:        options.PreviousUUID,
 		PreviousIPv4Address: options.PreviousIPv4Address,
 		RemoveRejected:      removeRejected,
-	}
-}
-
-func normalizeConnectivity(value networkmanager.Connectivity) connectivity.InternetState {
-	switch value {
-	case networkmanager.ConnectivityNone:
-		return connectivity.InternetNone
-	case networkmanager.ConnectivityPortal:
-		return connectivity.InternetPortal
-	case networkmanager.ConnectivityLimited:
-		return connectivity.InternetLimited
-	case networkmanager.ConnectivityFull:
-		return connectivity.InternetFull
-	default:
-		return connectivity.InternetUnknown
 	}
 }

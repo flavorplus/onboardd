@@ -81,7 +81,7 @@ func (service *Service) Bootstrap(ctx context.Context) (Bootstrap, error) {
 // Networks returns visible networks ordered strongest first and then by SSID.
 func (service *Service) Networks(ctx context.Context) ([]Network, error) {
 	if !service.capabilities.Network {
-		return nil, NewPublicError("mode_unavailable", "Connecting to a Wi-Fi network is not available.")
+		return nil, errModeUnavailableNetwork
 	}
 	networks, err := service.backend.Networks(ctx)
 	if err != nil {
@@ -115,7 +115,7 @@ func (service *Service) Networks(ctx context.Context) ([]Network, error) {
 // ownership. Profiles managed outside onboardd remain visible but read-only.
 func (service *Service) KnownNetworks(ctx context.Context) ([]KnownNetwork, error) {
 	if !service.capabilities.Network {
-		return nil, NewPublicError("mode_unavailable", "Connecting to a Wi-Fi network is not available.")
+		return nil, errModeUnavailableNetwork
 	}
 	known, err := service.backend.KnownNetworks(ctx)
 	if err != nil {
@@ -139,7 +139,7 @@ func (service *Service) KnownNetworks(ctx context.Context) ([]KnownNetwork, erro
 // ForgetKnownNetwork removes one inactive onboardd-owned infrastructure profile.
 func (service *Service) ForgetKnownNetwork(ctx context.Context, uuid string) error {
 	if !service.capabilities.Network {
-		return NewPublicError("mode_unavailable", "Connecting to a Wi-Fi network is not available.")
+		return errModeUnavailableNetwork
 	}
 	service.mu.Lock()
 	if service.unavailableLocked() {
@@ -154,10 +154,7 @@ func (service *Service) ForgetKnownNetwork(ctx context.Context, uuid string) err
 	}
 	if service.isForgetting {
 		service.mu.Unlock()
-		return NewPublicError(
-			"profile_change_in_progress",
-			"Another saved network is already being updated. Please try again.",
-		)
+		return errProfileChangeInProgress
 	}
 	service.isForgetting = true
 	service.mu.Unlock()
@@ -173,7 +170,7 @@ func (service *Service) ForgetKnownNetwork(ctx context.Context, uuid string) err
 // change after the HTTP layer has flushed the accepted response.
 func (service *Service) StartConnection(request ConnectionRequest) (Operation, error) {
 	if !service.capabilities.Network {
-		return Operation{}, NewPublicError("mode_unavailable", "Connecting to a Wi-Fi network is not available.")
+		return Operation{}, errModeUnavailableNetwork
 	}
 	return service.start(OperationConnect, request.SSID, func(ctx context.Context) error {
 		return service.backend.Connect(ctx, request)
@@ -184,7 +181,7 @@ func (service *Service) StartConnection(request ConnectionRequest) (Operation, e
 // protected infrastructure transition slot used for newly entered credentials.
 func (service *Service) StartKnownNetwork(ctx context.Context, uuid string) (Operation, error) {
 	if !service.capabilities.Network {
-		return Operation{}, NewPublicError("mode_unavailable", "Connecting to a Wi-Fi network is not available.")
+		return Operation{}, errModeUnavailableNetwork
 	}
 	known, err := service.KnownNetworks(ctx)
 	if err != nil {
@@ -195,31 +192,22 @@ func (service *Service) StartKnownNetwork(ctx context.Context, uuid string) (Ope
 			continue
 		}
 		if network.Active {
-			return Operation{}, NewPublicError(
-				"active_network",
-				"The device is already connected to this network.",
-			)
+			return Operation{}, errActiveNetwork
 		}
 		if !network.CanConnect {
-			return Operation{}, NewPublicError(
-				"network_read_only",
-				"This network profile is managed outside onboardd and cannot be activated here.",
-			)
+			return Operation{}, errNetworkReadOnly
 		}
 		return service.start(OperationConnect, network.SSID, func(ctx context.Context) error {
 			return service.backend.ConnectKnownNetwork(ctx, uuid)
 		})
 	}
-	return Operation{}, NewPublicError(
-		"known_network_not_found",
-		"This saved network no longer exists.",
-	)
+	return Operation{}, errKnownNetworkNotFound
 }
 
 // StartStandalone reserves the transition slot for server-configured standalone mode.
 func (service *Service) StartStandalone() (Operation, error) {
 	if !service.capabilities.Standalone {
-		return Operation{}, NewPublicError("mode_unavailable", "Standalone mode is not available.")
+		return Operation{}, errModeUnavailableStandalone
 	}
 	return service.start(OperationStandalone, "", service.backend.Standalone)
 }
@@ -307,10 +295,7 @@ func (service *Service) start(
 	}
 	if service.isForgetting {
 		service.mu.Unlock()
-		return Operation{}, NewPublicError(
-			"profile_change_in_progress",
-			"Another saved network is already being updated. Please try again.",
-		)
+		return Operation{}, errProfileChangeInProgress
 	}
 	if active := service.activeOperationLocked(); active != nil {
 		operation := cloneOperation(active)
