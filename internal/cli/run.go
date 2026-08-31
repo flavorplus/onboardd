@@ -18,7 +18,6 @@ import (
 	"github.com/flavorplus/onboardd/internal/recovery"
 	setupflow "github.com/flavorplus/onboardd/internal/setup"
 	stateengine "github.com/flavorplus/onboardd/internal/state"
-	"github.com/flavorplus/onboardd/internal/systemd"
 	webui "github.com/flavorplus/onboardd/internal/web"
 )
 
@@ -33,7 +32,7 @@ func runAppliance(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if err != nil {
 		return err
 	}
-	serviceNotifier, err := systemd.NewNotifier()
+	serviceNotifier, err := observability.NewNotifier()
 	if err != nil {
 		return fmt.Errorf("configure systemd notifications: %w", err)
 	}
@@ -46,7 +45,7 @@ func runManagedAppliance(
 	options setupOptions,
 	stdout io.Writer,
 	lifecycle *observability.Lifecycle,
-	serviceNotifier *systemd.Notifier,
+	serviceNotifier *observability.Notifier,
 ) (result error) {
 	if err := validateSetupOptions(options); err != nil {
 		return err

@@ -1,6 +1,6 @@
 // Package systemd connects onboardd's transport-neutral health state to the
 // service manager notification protocol.
-package systemd
+package observability
 
 import (
 	"context"
@@ -13,8 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/flavorplus/onboardd/internal/observability"
 )
 
 const (
@@ -96,7 +94,7 @@ func (notifier *Notifier) Enabled() bool {
 // Run reports health changes until cancellation. A notification delivery failure
 // ends the component so the appliance runtime can shut down cleanly and let the
 // service manager apply its restart policy.
-func (notifier *Notifier) Run(ctx context.Context, health *observability.Health) error {
+func (notifier *Notifier) Run(ctx context.Context, health *Health) error {
 	if !notifier.Enabled() {
 		return nil
 	}
@@ -116,7 +114,7 @@ func (notifier *Notifier) Run(ctx context.Context, health *observability.Health)
 
 func (notifier *Notifier) run(
 	ctx context.Context,
-	health *observability.Health,
+	health *Health,
 	watchdog <-chan time.Time,
 ) error {
 	if err := notifier.notify("STATUS=Starting"); err != nil {
@@ -152,19 +150,19 @@ func (notifier *Notifier) run(
 	}
 }
 
-func statusText(snapshot observability.Snapshot) string {
+func statusText(snapshot Snapshot) string {
 	switch snapshot.Status {
-	case observability.StatusReady:
+	case StatusReady:
 		return "Ready"
-	case observability.StatusReconciling:
+	case StatusReconciling:
 		return "Reconciling network state"
-	case observability.StatusRecovering:
+	case StatusRecovering:
 		return "Recovering runtime component"
-	case observability.StatusStopping:
+	case StatusStopping:
 		return "Stopping"
-	case observability.StatusStopped:
+	case StatusStopped:
 		return "Stopped"
-	case observability.StatusFailed:
+	case StatusFailed:
 		return "Failed"
 	default:
 		return "Starting"

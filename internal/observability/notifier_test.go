@@ -1,4 +1,4 @@
-package systemd
+package observability
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flavorplus/onboardd/internal/observability"
 	stateengine "github.com/flavorplus/onboardd/internal/state"
 )
 
@@ -97,7 +96,7 @@ func TestNewNotifier(t *testing.T) {
 }
 
 func TestNotifierRunReportsReadyWatchdogAndStopping(t *testing.T) {
-	health := observability.NewHealth()
+	health := NewHealth()
 	messages := make(chan string, 8)
 	notifier := &Notifier{
 		enabled: true,
@@ -140,7 +139,7 @@ func TestNotifierRunStopsOnDeliveryFailure(t *testing.T) {
 			return wantErr
 		},
 	}
-	err := notifier.run(context.Background(), observability.NewHealth(), nil)
+	err := notifier.run(context.Background(), NewHealth(), nil)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("run() error = %v, want wrapping %v", err, wantErr)
 	}
