@@ -59,6 +59,13 @@ jobs:
       - name: Vet Go
         run: go vet ./...
 
+      - name: Lint Go
+        # Pin the linter so an upstream release cannot turn a green branch red.
+        # The action requires golangci-lint v2, matching .golangci.yml.
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+
       - name: Check module metadata
         run: |
           go mod tidy

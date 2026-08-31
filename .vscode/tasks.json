@@ -91,9 +91,16 @@
       "problemMatcher": "$go"
     },
     {
+      "label": "Go: lint all",
+      "type": "process",
+      "command": "golangci-lint",
+      "args": ["run", "./..."],
+      "problemMatcher": "$go"
+    },
+    {
       "label": "Go: format all",
       "type": "process",
-      "command": "go",
+      "command": "golangci-lint",
       "args": ["fmt", "./..."],
       "problemMatcher": []
     },
@@ -194,6 +201,7 @@
         "Go: format all",
         "Go: test all",
         "Go: vet all",
+        "Go: lint all",
         "Scripts: check",
         "Frontend: test",
         "Frontend: build",

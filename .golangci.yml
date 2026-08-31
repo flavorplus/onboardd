@@ -1,0 +1,257 @@
+version: "2"
+
+run:
+  concurrency: 4
+  tests: true
+
+linters:
+  enable:
+    # --- correctness ---
+    - govet
+    - staticcheck
+    - unused
+    - errcheck
+    - errorlint # correct errors.Is/As use and %w wrapping
+    - forcetypeassert # type assertions without comma-ok
+    - copyloopvar
+    - durationcheck # time.Duration * time.Duration bugs
+    - reassign # package-level variable reassignment
+    - exhaustive # switches must cover every enum value
+    # --- security & resource safety ---
+    - gosec
+    - bidichk # trojan-source bidirectional Unicode (CVE-2021-42574)
+    - asciicheck # homoglyph identifiers
+    - bodyclose # unclosed HTTP response bodies
+    - noctx # HTTP requests without context
+    # --- style & naming ---
+    - revive
+    - gocritic
+    - godot # comments end with a period
+    - misspell
+    - dupword
+    - predeclared # shadowing len, cap, error...
+    - errname # ErrFoo / FooError conventions
+    - nolintlint # //nolint must name a linter and give a reason
+    # --- complexity ---
+    - gocyclo
+    - nestif
+    - dupl
+    # --- performance ---
+    - perfsprint
+    - unconvert
+    - ineffassign
+    # --- logging & testing ---
+    - sloglint
+    - thelper
+    - usetesting
+    # --- modernization ---
+    - modernize
+    - intrange
+    - usestdlibvars
+
+  disable:
+    # Each disable below was measured against this repo, not assumed.
+    - wsl_v5 # 445 findings, all blank-line placement. No correctness value.
+    - paralleltest # 244 findings. Tests share mutable fakes (fakeNetworkManager,
+      # fakeWaiter); adding t.Parallel() wholesale would introduce
+      # real races rather than reveal them.
+    - nilerr # 7 findings, 7 false positives. Every one is the deliberate
+      # "context cancelled => clean shutdown" idiom, e.g.
+      # systemd/notifier.go:131 which carries a comment saying so.
+    - containedctx # 1 finding: setup.Service deliberately owns its runtime
+      # context because it supervises background operations.
+    - goconst # 73 findings, 69 of them repeated literals in test fixtures.
+    - lll # line length is gofumpt's job
+    - prealloc # high false-positive rate without profiling first
+    - wrapcheck # forces wrapping every external error; too noisy
+    - err113 # forces sentinel errors everywhere; too opinionated
+    - mnd # flags obvious constants like HTTP status codes
+    - exhaustruct # breaks Go's zero-value idiom
+    - varnamelen # Go favours short names
+    - gochecknoglobals # cli.Version is set via -ldflags
+    - gochecknoinits
+    - depguard # needs per-project import policy
+    - cyclop # redundant with gocyclo
+    - gocognit # redundant with gocyclo + nestif
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        # Writes to stdout/stderr in CLI help and banner output. A failed write
+        # to a closed terminal is not actionable.
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # Deferred Close on read-only handles. Every site flagged here is an
+        # os.Open for reading (config, logo) or an already-idempotent
+        # ControlServer.Close; none can lose buffered writes.
+        - (*os.File).Close
+        - (io.Closer).Close
+        - (*github.com/flavorplus/onboardd/internal/recovery.ControlServer).Close
+        - (*net.UnixConn).Close
+        - (io.ReadCloser).Close
+    exhaustive:
+      # Every switch flagged here already has a default: clause that handles the
+      # remaining cases (e.g. normalizeConnectivity -> InternetUnknown).
+      default-signifies-exhaustive: true
+    gocyclo:
+      min-complexity: 15
+    nestif:
+      min-complexity: 7
+    dupl:
+      threshold: 150
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: package-comments
+          disabled: true # main.go lacks one; tracked as a follow-up
+        - name: exported
+          disabled: true # 12 exported types in config/, state/ and web/ lack
+          # doc comments; tracked as a follow-up rather than
+          # bundled into this config-only change.
+
+  exclusions:
+    # Only measured false positives are listed. Each says why.
+    rules:
+      # "Avahi" is a proper noun; ST1005 does not recognise it. Every flagged
+      # string in these three files begins with it.
+      - path: (internal/cli/run|internal/discovery/avahi|internal/web/handoff)\.go
+        linters: [staticcheck]
+        text: "ST1005"
+
+      # This switch deliberately has no default: only the terminal stages set or
+      # clear the reconciler's degraded marker. The other stages must not.
+      - path: internal/observability/health\.go
+        linters: [exhaustive]
+        text: "state.Stage"
+
+      # "interfase" is deliberate fixture data for the unknown-key rejection
+      # test; correcting it would delete the thing under test.
+      - path: internal/config/config_test\.go
+        linters: [misspell]
+
+      # Deferred Close on unix control sockets. respond() already checks the
+      # io.WriteString error and unix conns are unbuffered in Go, so a failing
+      # Close cannot drop the response; RequestControl's side is read-only.
+      - path: internal/recovery/control\.go
+        linters: [errcheck]
+        text: "connection.Close"
+
+      # ---------------------------------------------------------------------
+      # Tracked follow-ups. These are real improvements, not false positives,
+      # excluded only to keep this a config-only change. Delete each exclusion
+      # in the commit that makes the fix.
+      # ---------------------------------------------------------------------
+
+      # %v drops deleteErr from the error tree; Go 1.20+ allows a second %w.
+      # Changing it alters what errors.Is/As can see, so it is a behavioural
+      # fix and belongs in its own commit.
+      - path: internal/networkmanager/transitions\.go
+        linters: [errorlint]
+
+      # net.DialTimeout -> (*net.Dialer).DialContext in the `onboardd recover`
+      # client. Changes cancellation semantics; own commit.
+      - path: internal/recovery/control\.go
+        linters: [noctx]
+
+      # Mechanical rewrites (strings.Cut, slices.Contains, slices.Backward,
+      # CutPrefix, SplitSeq) and fmt.Sprint -> strconv.FormatUint.
+      - path: \.go$
+        linters: [modernize, perfsprint]
+
+      # os.MkdirTemp -> t.TempDir, missing t.Helper(), unchecked assertion.
+      - path: _test\.go
+        linters: [usetesting, thelper, forcetypeassert]
+
+      # PasswordFile fields hold *paths to* secret files, never secrets.
+      - path: internal/config/config\.go
+        linters: [gosec]
+        text: "G101"
+
+      # nft is invoked with literal argv (["-f","-"], ["-j","list","tables"]);
+      # the ruleset is fed on stdin. The only variable is the binary name, a
+      # compile-time constant from cli/run.go.
+      - path: internal/captive/redirect\.go
+        linters: [gosec]
+        text: "G204"
+
+      # Paths come from the root-owned TOML config; reading them is the point.
+      - path: (internal/cli/setup|internal/config/identity|internal/web/logo)\.go
+        linters: [gosec]
+        text: "G304"
+
+      # The captive portal is HTTP by design (the URL scheme is validated as
+      # http), so a Secure cookie could never be sent. HttpOnly and SameSite
+      # are both set, and the token is compared with subtle.ConstantTimeCompare.
+      - path: internal/web/api\.go
+        linters: [gosec]
+        text: "G124"
+
+      # prefix comes from net.ParseCIDR's mask size, bounded to 0..32.
+      - path: internal/networkmanager/settings\.go
+        linters: [gosec]
+        text: "G115"
+
+      # /run/onboardd and the dnsmasq drop-in directory must stay traversable;
+      # the socket and files inside carry the restrictive modes.
+      - path: (internal/recovery/control|internal/captive/dnsmasq)\.go
+        linters: [gosec]
+        text: "G301"
+
+      # os.Exit in main is the standard CLI exit path; the skipped defer only
+      # unregisters a signal handler in a process that is already terminating.
+      - path: main\.go
+        linters: [gocritic]
+        text: "exitAfterDefer"
+
+      # errors.AsType landed in Go 1.27; .go-version pins 1.26.7.
+      - linters: [modernize]
+        text: "errorsastype"
+
+      # Known-complex functions, all already slated for decomposition. Remove
+      # each exclusion as its refactor lands; new code is held to 15.
+      - path: internal/cli/run\.go
+        linters: [gocyclo]
+        text: "runManagedAppliance" # 33
+      - path: internal/state/engine\.go
+        linters: [gocyclo]
+        text: "\\(\\*Engine\\).run" # 31
+      - path: internal/appliance/controller\.go
+        linters: [gocyclo]
+        text: "\\(\\*Controller\\).Run" # 27
+      - path: internal/captive/http\.go
+        linters: [gocyclo]
+        text: "NewHTTPHandler" # 20
+      - path: internal/web/logo\.go
+        linters: [gocyclo]
+        text: "validateSVG" # 18
+      - path: internal/networkmanager/settings\.go
+        linters: [gocyclo]
+        text: "BuildAccessPointSettings" # 16
+      - path: internal/captive/server\.go
+        linters: [gocyclo]
+        text: "\\(\\*HTTPService\\).Run" # 16
+      - path: internal/state/engine\.go
+        linters: [gocyclo]
+        text: "evaluate" # 15
+      - path: internal/setup/network\.go
+        linters: [gocyclo]
+        text: "CurrentMode" # 15
+      - path: internal/networkmanager/wifi\.go
+        linters: [gocyclo]
+        text: "\\(\\*Client\\).Scan" # 15
+      - path: internal/networkmanager/types\.go
+        linters: [gocyclo]
+        text: "\\(DeviceState\\).String" # 14
+
+      # Test files may be long and repetitive by nature.
+      - path: _test\.go
+        linters: [gocyclo, dupl, errcheck, noctx, gosec]
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
