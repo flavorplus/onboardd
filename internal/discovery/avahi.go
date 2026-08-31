@@ -96,9 +96,6 @@ func newPublisher(api avahiAPI) *Publisher {
 }
 
 func (publisher *Publisher) start(ctx context.Context, options Options) error {
-	if err := validateOptions(options); err != nil {
-		return err
-	}
 	registrationContext, cancel := context.WithTimeout(ctx, registrationWait)
 	defer cancel()
 
@@ -190,10 +187,7 @@ func validateOptions(options Options) error {
 	return nil
 }
 
-func readHostname(ctx context.Context, api interface {
-	HostName(context.Context) (string, error)
-},
-) (string, error) {
+func readHostname(ctx context.Context, api avahiAPI) (string, error) {
 	hostname, err := api.HostName(ctx)
 	if err != nil {
 		return "", fmt.Errorf("read Avahi hostname: %w", err)

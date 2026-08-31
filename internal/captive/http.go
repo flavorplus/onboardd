@@ -77,7 +77,7 @@ func NewHTTPHandler(
 
 	return &HTTPHandler{
 		portalURL:       parsed,
-		portalAuthority: normalizeAuthority(parsed.Host, parsed.Scheme),
+		portalAuthority: normalizeAuthority(parsed.Host),
 		listenerPort:    strconv.Itoa(int(listenerPort)),
 		landingPage:     landingPage,
 		portal:          portal,
@@ -94,7 +94,7 @@ func (handler *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *htt
 		handler.portal.ServeHTTP(response, request)
 		return
 	}
-	if normalizeAuthority(request.Host, "http") == handler.portalAuthority {
+	if normalizeAuthority(request.Host) == handler.portalAuthority {
 		if strings.HasPrefix(request.URL.Path, "/assets/") {
 			handler.portal.ServeHTTP(response, request)
 			return
@@ -139,14 +139,13 @@ func setNoCacheHeaders(header http.Header) {
 	header.Set("Expires", "0")
 }
 
-func normalizeAuthority(authority, scheme string) string {
-	parsed := &url.URL{Scheme: scheme, Host: authority}
+// normalizeAuthority is http-only: NewHTTPHandler rejects any portal URL whose
+// scheme is not http, so 80 is the only default port that can reach here.
+func normalizeAuthority(authority string) string {
+	parsed := &url.URL{Host: authority}
 	hostname := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
 	port := parsed.Port()
-	if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
-		port = ""
-	}
-	if port == "" {
+	if port == "" || port == "80" {
 		return hostname
 	}
 	return hostname + ":" + port

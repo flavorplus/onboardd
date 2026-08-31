@@ -51,37 +51,27 @@ const (
 	DeviceStateFailed       DeviceState = 120
 )
 
+var deviceStateNames = map[DeviceState]string{
+	DeviceStateUnknown:      "unknown",
+	DeviceStateUnmanaged:    "unmanaged",
+	DeviceStateUnavailable:  "unavailable",
+	DeviceStateDisconnected: "disconnected",
+	DeviceStatePrepare:      "prepare",
+	DeviceStateConfig:       "config",
+	DeviceStateNeedAuth:     "need-auth",
+	DeviceStateIPConfig:     "ip-config",
+	DeviceStateIPCheck:      "ip-check",
+	DeviceStateSecondaries:  "secondaries",
+	DeviceStateActivated:    "activated",
+	DeviceStateDeactivating: "deactivating",
+	DeviceStateFailed:       "failed",
+}
+
 func (s DeviceState) String() string {
-	switch s {
-	case DeviceStateUnknown:
-		return "unknown"
-	case DeviceStateUnmanaged:
-		return "unmanaged"
-	case DeviceStateUnavailable:
-		return "unavailable"
-	case DeviceStateDisconnected:
-		return "disconnected"
-	case DeviceStatePrepare:
-		return "prepare"
-	case DeviceStateConfig:
-		return "config"
-	case DeviceStateNeedAuth:
-		return "need-auth"
-	case DeviceStateIPConfig:
-		return "ip-config"
-	case DeviceStateIPCheck:
-		return "ip-check"
-	case DeviceStateSecondaries:
-		return "secondaries"
-	case DeviceStateActivated:
-		return "activated"
-	case DeviceStateDeactivating:
-		return "deactivating"
-	case DeviceStateFailed:
-		return "failed"
-	default:
-		return fmt.Sprintf("unknown(%d)", s)
+	if name, ok := deviceStateNames[s]; ok {
+		return name
 	}
+	return fmt.Sprintf("unknown(%d)", s)
 }
 
 // DeviceStateReason explains why NetworkManager changed a device's state.
@@ -102,35 +92,26 @@ const (
 	DeviceStateReasonSSIDNotFound           DeviceStateReason = 53
 )
 
+var deviceStateReasonNames = map[DeviceStateReason]string{
+	DeviceStateReasonNone:                   "none",
+	DeviceStateReasonUnknown:                "unknown",
+	DeviceStateReasonConfigFailed:           "config-failed",
+	DeviceStateReasonIPConfigUnavailable:    "ip-config-unavailable",
+	DeviceStateReasonNoSecrets:              "no-secrets",
+	DeviceStateReasonSupplicantConfigFailed: "supplicant-config-failed",
+	DeviceStateReasonSupplicantFailed:       "supplicant-failed",
+	DeviceStateReasonSupplicantTimeout:      "supplicant-timeout",
+	DeviceStateReasonDHCPFailed:             "dhcp-failed",
+	DeviceStateReasonSharedStartFailed:      "shared-start-failed",
+	DeviceStateReasonSharedFailed:           "shared-failed",
+	DeviceStateReasonSSIDNotFound:           "ssid-not-found",
+}
+
 func (r DeviceStateReason) String() string {
-	switch r {
-	case DeviceStateReasonNone:
-		return "none"
-	case DeviceStateReasonUnknown:
-		return "unknown"
-	case DeviceStateReasonConfigFailed:
-		return "config-failed"
-	case DeviceStateReasonIPConfigUnavailable:
-		return "ip-config-unavailable"
-	case DeviceStateReasonNoSecrets:
-		return "no-secrets"
-	case DeviceStateReasonSupplicantConfigFailed:
-		return "supplicant-config-failed"
-	case DeviceStateReasonSupplicantFailed:
-		return "supplicant-failed"
-	case DeviceStateReasonSupplicantTimeout:
-		return "supplicant-timeout"
-	case DeviceStateReasonDHCPFailed:
-		return "dhcp-failed"
-	case DeviceStateReasonSharedStartFailed:
-		return "shared-start-failed"
-	case DeviceStateReasonSharedFailed:
-		return "shared-failed"
-	case DeviceStateReasonSSIDNotFound:
-		return "ssid-not-found"
-	default:
-		return fmt.Sprintf("reason-%d", r)
+	if name, ok := deviceStateReasonNames[r]; ok {
+		return name
 	}
+	return fmt.Sprintf("reason-%d", r)
 }
 
 // Status contains only the NetworkManager state used by onboardd decisions.
