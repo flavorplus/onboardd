@@ -1,5 +1,5 @@
 // Package web provides the product-facing setup HTTP API.
-package web
+package webui
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flavorplus/onboardd/internal/setup"
+	"github.com/flavorplus/onboardd/internal/setupflow"
 )
 
 const (
@@ -49,27 +49,27 @@ func ValidateAdminPassword(password string) error {
 
 // Written from more than one handler; the code is what the browser switches on.
 var (
-	failureInvalidProfileID = setup.Failure{
+	failureInvalidProfileID = setupflow.Failure{
 		Code:    "invalid_profile_id",
 		Message: "The saved network identifier is invalid.",
 	}
-	failureRequestNotAllowed = setup.Failure{
+	failureRequestNotAllowed = setupflow.Failure{
 		Code:    "request_not_allowed",
 		Message: "Refresh the setup page and try again.",
 	}
 )
 
 type setupService interface {
-	Bootstrap(context.Context) (setup.Bootstrap, error)
-	Networks(context.Context) ([]setup.Network, error)
-	KnownNetworks(context.Context) ([]setup.KnownNetwork, error)
+	Bootstrap(context.Context) (setupflow.Bootstrap, error)
+	Networks(context.Context) ([]setupflow.Network, error)
+	KnownNetworks(context.Context) ([]setupflow.KnownNetwork, error)
 	ForgetKnownNetwork(context.Context, string) error
-	StartConnection(setup.ConnectionRequest) (setup.Operation, error)
-	StartKnownNetwork(context.Context, string) (setup.Operation, error)
-	StartStandalone() (setup.Operation, error)
+	StartConnection(setupflow.ConnectionRequest) (setupflow.Operation, error)
+	StartKnownNetwork(context.Context, string) (setupflow.Operation, error)
+	StartStandalone() (setupflow.Operation, error)
 	BeginOperation(string) bool
 	CancelPendingOperation(string) bool
-	Operation(string) (setup.Operation, bool)
+	Operation(string) (setupflow.Operation, bool)
 }
 
 // API is the versioned setup JSON surface.
@@ -145,7 +145,7 @@ func randomToken(label string) (string, error) {
 }
 
 func (api *API) notFound(response http.ResponseWriter, _ *http.Request) {
-	writeError(response, http.StatusNotFound, setup.Failure{
+	writeError(response, http.StatusNotFound, setupflow.Failure{
 		Code:    "api_not_found",
 		Message: "This setup API route does not exist.",
 	})
@@ -185,7 +185,7 @@ func (api *API) postSession(response http.ResponseWriter, request *http.Request)
 			return
 		case <-timer.C:
 		}
-		writeError(response, http.StatusUnauthorized, setup.Failure{
+		writeError(response, http.StatusUnauthorized, setupflow.Failure{
 			Code:    "authentication_failed",
 			Message: "The administrator password is incorrect.",
 		})
@@ -211,7 +211,7 @@ func (api *API) allowSession(response http.ResponseWriter, request *http.Request
 	) == 1 {
 		return true
 	}
-	writeError(response, http.StatusUnauthorized, setup.Failure{
+	writeError(response, http.StatusUnauthorized, setupflow.Failure{
 		Code:    "authentication_required",
 		Message: "Enter the administrator password to continue.",
 	})
@@ -219,7 +219,7 @@ func (api *API) allowSession(response http.ResponseWriter, request *http.Request
 }
 
 type setupResponse struct {
-	setup.Bootstrap
+	setupflow.Bootstrap
 	CSRFToken string           `json:"csrf_token"`
 	Handoff   *handoffResponse `json:"handoff,omitempty"`
 }
@@ -295,7 +295,7 @@ func (api *API) getNetworks(response http.ResponseWriter, request *http.Request)
 		return
 	}
 	writeJSON(response, http.StatusOK, struct {
-		Networks []setup.Network `json:"networks"`
+		Networks []setupflow.Network `json:"networks"`
 	}{Networks: networks})
 }
 
@@ -306,7 +306,7 @@ func (api *API) getKnownNetworks(response http.ResponseWriter, request *http.Req
 		return
 	}
 	writeJSON(response, http.StatusOK, struct {
-		Networks []setup.KnownNetwork `json:"networks"`
+		Networks []setupflow.KnownNetwork `json:"networks"`
 	}{Networks: known})
 }
 
@@ -364,7 +364,7 @@ func (api *API) postConnection(response http.ResponseWriter, request *http.Reque
 		writeError(response, http.StatusBadRequest, *failure)
 		return
 	}
-	operation, err := api.service.StartConnection(setup.ConnectionRequest{
+	operation, err := api.service.StartConnection(setupflow.ConnectionRequest{
 		SSID:     payload.SSID,
 		Password: payload.Password,
 		Open:     payload.Open,
@@ -380,7 +380,7 @@ func (api *API) postConnection(response http.ResponseWriter, request *http.Reque
 // startOperation tells the client about the operation before any work begins, and
 // releases the transition slot if that response never reached them. The ordering
 // matters: work must not start until the client holds the operation id.
-func (api *API) startOperation(response http.ResponseWriter, operation setup.Operation) {
+func (api *API) startOperation(response http.ResponseWriter, operation setupflow.Operation) {
 	if err := api.acceptOperation(response, operation); err != nil {
 		api.service.CancelPendingOperation(operation.ID)
 		return
@@ -388,9 +388,9 @@ func (api *API) startOperation(response http.ResponseWriter, operation setup.Ope
 	api.service.BeginOperation(operation.ID)
 }
 
-func (api *API) acceptOperation(response http.ResponseWriter, operation setup.Operation) error {
+func (api *API) acceptOperation(response http.ResponseWriter, operation setupflow.Operation) error {
 	payload, err := json.Marshal(struct {
-		Operation setup.Operation `json:"operation"`
+		Operation setupflow.Operation `json:"operation"`
 	}{Operation: operation})
 	if err != nil {
 		return fmt.Errorf("encode accepted setup operation: %w", err)
@@ -424,7 +424,7 @@ func (api *API) postStandalone(response http.ResponseWriter, request *http.Reque
 		return
 	}
 	if !payload.Confirm {
-		writeError(response, http.StatusBadRequest, setup.Failure{
+		writeError(response, http.StatusBadRequest, setupflow.Failure{
 			Code:    "confirmation_required",
 			Message: "Confirm standalone mode before continuing.",
 		})
@@ -442,14 +442,14 @@ func (api *API) getOperation(response http.ResponseWriter, request *http.Request
 	id := request.PathValue("id")
 	operation, ok := api.service.Operation(id)
 	if !ok {
-		writeError(response, http.StatusNotFound, setup.Failure{
+		writeError(response, http.StatusNotFound, setupflow.Failure{
 			Code:    "operation_not_found",
 			Message: "This setup operation is no longer available.",
 		})
 		return
 	}
 	writeJSON(response, http.StatusOK, struct {
-		Operation setup.Operation `json:"operation"`
+		Operation setupflow.Operation `json:"operation"`
 	}{Operation: operation})
 }
 
@@ -489,7 +489,7 @@ func requestOrigin(request *http.Request) string {
 func decodeJSON(response http.ResponseWriter, request *http.Request, destination any) bool {
 	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
-		writeError(response, http.StatusUnsupportedMediaType, setup.Failure{
+		writeError(response, http.StatusUnsupportedMediaType, setupflow.Failure{
 			Code:    "json_required",
 			Message: "The request must use JSON.",
 		})
@@ -501,7 +501,7 @@ func decodeJSON(response http.ResponseWriter, request *http.Request, destination
 	if err := decoder.Decode(destination); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeError(response, http.StatusRequestEntityTooLarge, setup.Failure{
+			writeError(response, http.StatusRequestEntityTooLarge, setupflow.Failure{
 				Code:    "request_too_large",
 				Message: "The request is too large.",
 			})
@@ -517,17 +517,17 @@ func decodeJSON(response http.ResponseWriter, request *http.Request, destination
 	return true
 }
 
-func validateConnectionPayload(payload connectionPayload) *setup.Failure {
+func validateConnectionPayload(payload connectionPayload) *setupflow.Failure {
 	ssidLength := len([]byte(payload.SSID))
 	if ssidLength == 0 || ssidLength > 32 {
-		return &setup.Failure{
+		return &setupflow.Failure{
 			Code:    "invalid_network_name",
 			Message: "Enter a Wi-Fi network name between 1 and 32 characters.",
 		}
 	}
 	if payload.Open {
 		if payload.Password != "" {
-			return &setup.Failure{
+			return &setupflow.Failure{
 				Code:    "unexpected_password",
 				Message: "An open network does not use a password.",
 			}
@@ -535,7 +535,7 @@ func validateConnectionPayload(payload connectionPayload) *setup.Failure {
 		return nil
 	}
 	if !validPSK(payload.Password) {
-		return &setup.Failure{
+		return &setupflow.Failure{
 			Code:    "invalid_password",
 			Message: "Enter a Wi-Fi password between 8 and 63 characters.",
 		}
@@ -579,13 +579,13 @@ func normalizeOrigin(value string) (string, error) {
 }
 
 func writeServiceError(response http.ResponseWriter, err error) {
-	var conflict *setup.ConflictError
+	var conflict *setupflow.ConflictError
 	if errors.As(err, &conflict) {
 		writeJSON(response, http.StatusConflict, struct {
-			Error     setup.Failure   `json:"error"`
-			Operation setup.Operation `json:"operation"`
+			Error     setupflow.Failure   `json:"error"`
+			Operation setupflow.Operation `json:"operation"`
 		}{
-			Error: setup.Failure{
+			Error: setupflow.Failure{
 				Code:    "operation_in_progress",
 				Message: "Another network change is already in progress.",
 			},
@@ -593,7 +593,7 @@ func writeServiceError(response http.ResponseWriter, err error) {
 		})
 		return
 	}
-	var public *setup.PublicError
+	var public *setupflow.PublicError
 	if errors.As(err, &public) {
 		status := http.StatusBadRequest
 		switch public.Failure.Code {
@@ -613,22 +613,22 @@ func writeServiceError(response http.ResponseWriter, err error) {
 }
 
 func writeInvalidJSON(response http.ResponseWriter) {
-	writeError(response, http.StatusBadRequest, setup.Failure{
+	writeError(response, http.StatusBadRequest, setupflow.Failure{
 		Code:    "invalid_json",
 		Message: "The request could not be understood.",
 	})
 }
 
 func writeInternalError(response http.ResponseWriter) {
-	writeError(response, http.StatusInternalServerError, setup.Failure{
+	writeError(response, http.StatusInternalServerError, setupflow.Failure{
 		Code:    "internal_failure",
 		Message: "Setup is temporarily unavailable. Please try again.",
 	})
 }
 
-func writeError(response http.ResponseWriter, status int, failure setup.Failure) {
+func writeError(response http.ResponseWriter, status int, failure setupflow.Failure) {
 	writeJSON(response, status, struct {
-		Error setup.Failure `json:"error"`
+		Error setupflow.Failure `json:"error"`
 	}{Error: failure})
 }
 

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	appconfig "github.com/flavorplus/onboardd/internal/config"
+	"github.com/flavorplus/onboardd/internal/appconfig"
 )
 
 func TestVersion(t *testing.T) {

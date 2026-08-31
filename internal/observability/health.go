@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	stateengine "github.com/flavorplus/onboardd/internal/state"
+	"github.com/flavorplus/onboardd/internal/appliance"
 )
 
 // Status is the process-level health phase exposed to operators and supervisors.
@@ -49,14 +49,14 @@ const (
 // Snapshot is safe to expose over HTTP. Raw observer details and resource identifiers
 // never enter this type.
 type Snapshot struct {
-	Status    Status             `json:"status"`
-	Healthy   bool               `json:"healthy"`
-	Ready     bool               `json:"ready"`
-	Sequence  uint64             `json:"sequence,omitempty"`
-	Stage     stateengine.Stage  `json:"stage,omitempty"`
-	Mode      stateengine.Mode   `json:"mode,omitempty"`
-	Reason    stateengine.Reason `json:"reason,omitempty"`
-	UpdatedAt time.Time          `json:"updated_at"`
+	Status    Status           `json:"status"`
+	Healthy   bool             `json:"healthy"`
+	Ready     bool             `json:"ready"`
+	Sequence  uint64           `json:"sequence,omitempty"`
+	Stage     appliance.Stage  `json:"stage,omitempty"`
+	Mode      appliance.Mode   `json:"mode,omitempty"`
+	Reason    appliance.Reason `json:"reason,omitempty"`
+	UpdatedAt time.Time        `json:"updated_at"`
 }
 
 // Health owns the concurrency-safe lifecycle snapshot and a coalesced change signal.
@@ -100,9 +100,9 @@ func (health *Health) Changes() <-chan Snapshot {
 // State.Detail, D-Bus paths, profile identifiers, or raw errors.
 func (health *Health) ObserveNetworkState(
 	sequence uint64,
-	stage stateengine.Stage,
-	mode stateengine.Mode,
-	reason stateengine.Reason,
+	stage appliance.Stage,
+	mode appliance.Mode,
+	reason appliance.Reason,
 ) {
 	health.mu.Lock()
 	defer health.mu.Unlock()
@@ -113,11 +113,11 @@ func (health *Health) ObserveNetworkState(
 	health.snapshot.Reason = reason
 
 	switch stage {
-	case stateengine.StageInfrastructure,
-		stateengine.StageStandalone,
-		stateengine.StageProvisioning:
+	case appliance.StageInfrastructure,
+		appliance.StageStandalone,
+		appliance.StageProvisioning:
 		delete(health.degraded, ComponentReconciler)
-	case stateengine.StageFailed:
+	case appliance.StageFailed:
 		health.degraded[ComponentReconciler] = struct{}{}
 	}
 	health.deriveLocked()
@@ -170,14 +170,14 @@ func (health *Health) deriveLocked() {
 	switch {
 	case len(health.degraded) > 0:
 		health.snapshot.Status = StatusRecovering
-	case health.snapshot.Stage == stateengine.StageInfrastructure,
-		health.snapshot.Stage == stateengine.StageStandalone,
-		health.snapshot.Stage == stateengine.StageProvisioning:
+	case health.snapshot.Stage == appliance.StageInfrastructure,
+		health.snapshot.Stage == appliance.StageStandalone,
+		health.snapshot.Stage == appliance.StageProvisioning:
 		health.snapshot.Status = StatusReady
 		health.snapshot.Ready = true
-	case health.snapshot.Stage == stateengine.StageBooting,
-		health.snapshot.Stage == stateengine.StageReconciling,
-		health.snapshot.Stage == stateengine.StageWaitingForConnectivity:
+	case health.snapshot.Stage == appliance.StageBooting,
+		health.snapshot.Stage == appliance.StageReconciling,
+		health.snapshot.Stage == appliance.StageWaitingForConnectivity:
 		health.snapshot.Status = StatusReconciling
 	default:
 		health.snapshot.Status = StatusStarting

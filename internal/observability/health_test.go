@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	stateengine "github.com/flavorplus/onboardd/internal/state"
+	"github.com/flavorplus/onboardd/internal/appliance"
 )
 
 func TestHealthTracksReadinessRecoveryAndShutdown(t *testing.T) {
@@ -20,15 +20,15 @@ func TestHealthTracksReadinessRecoveryAndShutdown(t *testing.T) {
 
 	health.ObserveNetworkState(
 		3,
-		stateengine.StageInfrastructure,
-		stateengine.ModeInfrastructure,
-		stateengine.ReasonInfrastructureReady,
+		appliance.StageInfrastructure,
+		appliance.ModeInfrastructure,
+		appliance.ReasonInfrastructureReady,
 	)
 	ready := health.Snapshot()
 	if !ready.Healthy || !ready.Ready || ready.Status != StatusReady {
 		t.Fatalf("ready snapshot = %+v", ready)
 	}
-	if ready.Stage != stateengine.StageInfrastructure || ready.Sequence != 3 {
+	if ready.Stage != appliance.StageInfrastructure || ready.Sequence != 3 {
 		t.Fatalf("ready state = %+v", ready)
 	}
 
@@ -56,15 +56,15 @@ func TestHealthChangesAreCoalescedAndWatchdogReady(t *testing.T) {
 	health := NewHealth()
 	health.ObserveNetworkState(
 		1,
-		stateengine.StageReconciling,
-		stateengine.ModeNone,
-		stateengine.ReasonInspectingNetwork,
+		appliance.StageReconciling,
+		appliance.ModeNone,
+		appliance.ReasonInspectingNetwork,
 	)
 	health.ObserveNetworkState(
 		2,
-		stateengine.StageStandalone,
-		stateengine.ModeStandalone,
-		stateengine.ReasonStandaloneActive,
+		appliance.StageStandalone,
+		appliance.ModeStandalone,
+		appliance.ReasonStandaloneActive,
 	)
 
 	select {
@@ -86,9 +86,9 @@ func TestHealthHandlerReportsLivenessWithoutSensitiveDetails(t *testing.T) {
 	health := NewHealth()
 	health.ObserveNetworkState(
 		1,
-		stateengine.StageFailed,
-		stateengine.ModeNone,
-		stateengine.ReasonObservationFailed,
+		appliance.StageFailed,
+		appliance.ModeNone,
+		appliance.ReasonObservationFailed,
 	)
 
 	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)

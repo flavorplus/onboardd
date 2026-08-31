@@ -6,7 +6,7 @@ import (
 	"io"
 	"log/slog"
 
-	stateengine "github.com/flavorplus/onboardd/internal/state"
+	"github.com/flavorplus/onboardd/internal/appliance"
 )
 
 const lifecycleMessage = "onboardd lifecycle"
@@ -45,20 +45,20 @@ func (lifecycle *Lifecycle) Starting(ctx context.Context) {
 func (lifecycle *Lifecycle) ObserveNetworkState(
 	ctx context.Context,
 	sequence uint64,
-	stage stateengine.Stage,
-	mode stateengine.Mode,
-	reason stateengine.Reason,
-	trigger stateengine.EventKind,
+	stage appliance.Stage,
+	mode appliance.Mode,
+	reason appliance.Reason,
+	trigger appliance.EventKind,
 ) {
 	lifecycle.health.ObserveNetworkState(sequence, stage, mode, reason)
-	if stage != stateengine.StageInfrastructure &&
-		stage != stateengine.StageStandalone &&
-		stage != stateengine.StageProvisioning &&
-		stage != stateengine.StageFailed {
+	if stage != appliance.StageInfrastructure &&
+		stage != appliance.StageStandalone &&
+		stage != appliance.StageProvisioning &&
+		stage != appliance.StageFailed {
 		return
 	}
 	log := lifecycle.logger.InfoContext
-	if stage == stateengine.StageFailed {
+	if stage == appliance.StageFailed {
 		log = lifecycle.logger.WarnContext
 	}
 	log(

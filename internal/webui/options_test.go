@@ -1,4 +1,4 @@
-package web
+package webui
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	appconfig "github.com/flavorplus/onboardd/internal/config"
+	"github.com/flavorplus/onboardd/internal/appconfig"
 )
 
 func TestOptionsFromRenderedConfiguration(t *testing.T) {

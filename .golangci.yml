@@ -118,7 +118,7 @@ linters:
     rules:
       # "Avahi" is a proper noun; ST1005 does not recognise it. Every flagged
       # string in these three files begins with it.
-      - path: (internal/cli/run|internal/discovery/avahi|internal/web/options)\.go
+      - path: (internal/cli/run|internal/discovery/avahi|internal/webui/options)\.go
         linters: [staticcheck]
         text: "ST1005"
 
@@ -126,11 +126,11 @@ linters:
       # clear the reconciler's degraded marker. The other stages must not.
       - path: internal/observability/health\.go
         linters: [exhaustive]
-        text: "state.Stage"
+        text: "appliance.Stage"
 
       # "interfase" is deliberate fixture data for the unknown-key rejection
       # test; correcting it would delete the thing under test.
-      - path: internal/config/config_test\.go
+      - path: internal/appconfig/config_test\.go
         linters: [misspell]
 
       # Deferred Close on unix control sockets. respond() already checks the
@@ -167,7 +167,7 @@ linters:
         linters: [usetesting, thelper, forcetypeassert]
 
       # PasswordFile fields hold *paths to* secret files, never secrets.
-      - path: internal/config/config\.go
+      - path: internal/appconfig/config\.go
         linters: [gosec]
         text: "G101"
 
@@ -179,14 +179,14 @@ linters:
         text: "G204"
 
       # Paths come from the root-owned TOML config; reading them is the point.
-      - path: (internal/cli/setup|internal/config/template|internal/web/options)\.go
+      - path: (internal/cli/setup|internal/appconfig/template|internal/webui/options)\.go
         linters: [gosec]
         text: "G304"
 
       # The captive portal is HTTP by design (the URL scheme is validated as
       # http), so a Secure cookie could never be sent. HttpOnly and SameSite
       # are both set, and the token is compared with subtle.ConstantTimeCompare.
-      - path: internal/web/api\.go
+      - path: internal/webui/api\.go
         linters: [gosec]
         text: "G124"
 
@@ -216,7 +216,7 @@ linters:
       - path: internal/cli/run\.go
         linters: [gocyclo]
         text: "runManagedAppliance" # 33
-      - path: internal/state/engine\.go
+      - path: internal/appliance/engine\.go
         linters: [gocyclo]
         text: "\\(\\*Engine\\).run" # 31
       - path: internal/appliance/controller\.go
@@ -225,7 +225,7 @@ linters:
       - path: internal/captive/http\.go
         linters: [gocyclo]
         text: "NewHTTPHandler" # 20
-      - path: internal/web/options\.go
+      - path: internal/webui/options\.go
         linters: [gocyclo]
         text: "validateSVG" # 18
       - path: internal/networkmanager/settings\.go
@@ -234,10 +234,10 @@ linters:
       - path: internal/captive/server\.go
         linters: [gocyclo]
         text: "\\(\\*HTTPService\\).Run" # 16
-      - path: internal/state/engine\.go
+      - path: internal/appliance/engine\.go
         linters: [gocyclo]
         text: "evaluate" # 15
-      - path: internal/setup/network\.go
+      - path: internal/setupflow/network\.go
         linters: [gocyclo]
         text: "CurrentMode" # 15
       - path: internal/networkmanager/wifi\.go

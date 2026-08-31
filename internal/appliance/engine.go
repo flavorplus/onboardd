@@ -1,4 +1,4 @@
-package state
+package appliance
 
 import (
 	"context"
@@ -34,12 +34,12 @@ func (timer systemTimer) C() <-chan time.Time { return timer.Timer.C }
 // Engine reconciles transient state from an Observer.
 type Engine struct {
 	observer Observer
-	config   Config
+	config   EngineOptions
 	clock    clock
 }
 
-// New validates configuration and creates a reconciliation engine.
-func New(observer Observer, config Config) (*Engine, error) {
+// NewEngine validates configuration and creates a reconciliation engine.
+func NewEngine(observer Observer, config EngineOptions) (*Engine, error) {
 	if observer == nil {
 		return nil, errors.New("state observer is required")
 	}

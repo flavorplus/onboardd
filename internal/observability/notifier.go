@@ -1,5 +1,3 @@
-// Package systemd connects onboardd's transport-neutral health state to the
-// service manager notification protocol.
 package observability
 
 import (

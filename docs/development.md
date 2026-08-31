@@ -52,7 +52,7 @@ npm test
 npm run build
 ```
 
-The build writes deterministic production assets to `internal/web/dist`, where Go
+The build writes deterministic production assets to `internal/webui/dist`, where Go
 embeds them. Commit source and rebuilt assets together. CI rebuilds the frontend and
 fails if the committed output differs.
 
@@ -103,7 +103,7 @@ builds report `development`.
 main.go                    executable entry point
 internal/                  Go runtime packages grouped by responsibility
 frontend/                  TypeScript UI and simulated device
-internal/web/dist/         generated embedded frontend
+internal/webui/dist/         generated embedded frontend
 config/                    JSON Schema and example TOML files
 docs/                      durable architecture and operating documentation
 packaging/debian/          service unit and Debian package metadata

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	stateengine "github.com/flavorplus/onboardd/internal/state"
+	"github.com/flavorplus/onboardd/internal/appliance"
 )
 
 func TestNewNotifier(t *testing.T) {
@@ -116,9 +116,9 @@ func TestNotifierRunReportsReadyWatchdogAndStopping(t *testing.T) {
 	wantMessage(t, messages, "STATUS=Starting")
 	health.ObserveNetworkState(
 		1,
-		stateengine.StageInfrastructure,
-		stateengine.ModeInfrastructure,
-		stateengine.ReasonInfrastructureReady,
+		appliance.StageInfrastructure,
+		appliance.ModeInfrastructure,
+		appliance.ReasonInfrastructureReady,
 	)
 	wantMessage(t, messages, "READY=1\nSTATUS=Ready")
 

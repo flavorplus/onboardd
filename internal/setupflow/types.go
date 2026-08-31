@@ -1,6 +1,6 @@
 // Package setup defines the product-facing setup workflow without exposing
 // NetworkManager or captive-plumbing details to the HTTP layer.
-package setup
+package setupflow
 
 import "time"
 

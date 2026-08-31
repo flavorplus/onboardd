@@ -8,29 +8,28 @@ import (
 	"testing"
 	"time"
 
-	recoveryinput "github.com/flavorplus/onboardd/internal/recovery"
-	stateengine "github.com/flavorplus/onboardd/internal/state"
+	"github.com/flavorplus/onboardd/internal/recovery"
 )
 
 func TestControllerAppliesOnlyStableStateChanges(t *testing.T) {
 	source := newFakeTransitionSource(
-		stateengine.StageBooting,
-		stateengine.StageReconciling,
-		stateengine.StageWaitingForConnectivity,
-		stateengine.StageProvisioning,
-		stateengine.StageProvisioning,
-		stateengine.StageWaitingForConnectivity,
-		stateengine.StageInfrastructure,
-		stateengine.StageInfrastructure,
-		stateengine.StageStandalone,
-		stateengine.StageStopped,
+		StageBooting,
+		StageReconciling,
+		StageWaitingForConnectivity,
+		StageProvisioning,
+		StageProvisioning,
+		StageWaitingForConnectivity,
+		StageInfrastructure,
+		StageInfrastructure,
+		StageStandalone,
+		StageStopped,
 	)
 	provisioning := &fakeProvisioningManager{}
 	controller := newTestController(t,
 		source,
 		provisioning,
-		recoveryinput.NewRequests(),
-		Config{ActionTimeout: time.Second},
+		recovery.NewRequests(),
+		ControllerOptions{ActionTimeout: time.Second},
 	)
 
 	if err := controller.Run(context.Background()); err != nil {
@@ -44,20 +43,20 @@ func TestControllerAppliesOnlyStableStateChanges(t *testing.T) {
 
 func TestControllerReportsNormalizedLifecycleEvents(t *testing.T) {
 	source := newFakeTransitionSourceWithStates(
-		stateengine.State{
+		State{
 			Sequence: 1,
-			Stage:    stateengine.StageProvisioning,
+			Stage:    StageProvisioning,
 			Detail:   "raw D-Bus detail",
 		},
-		stateengine.State{Sequence: 2, Stage: stateengine.StageInfrastructure},
-		stateengine.State{Sequence: 3, Stage: stateengine.StageStopped},
+		State{Sequence: 2, Stage: StageInfrastructure},
+		State{Sequence: 3, Stage: StageStopped},
 	)
 	observer := &fakeLifecycleObserver{}
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
-		Config{ActionTimeout: time.Second, Observer: observer},
+		recovery.NewRequests(),
+		ControllerOptions{ActionTimeout: time.Second, Observer: observer},
 	)
 
 	if err := controller.Run(context.Background()); err != nil {
@@ -73,14 +72,14 @@ func TestControllerReportsNormalizedLifecycleEvents(t *testing.T) {
 }
 
 func TestControllerReportsRecoveryRequestAndFailedAction(t *testing.T) {
-	requests := recoveryinput.NewRequests()
+	requests := recovery.NewRequests()
 	requests.Request()
 	observer := &fakeLifecycleObserver{}
 	controller := newTestController(t,
-		newFakeTransitionSource(stateengine.StageStopped),
+		newFakeTransitionSource(StageStopped),
 		&fakeProvisioningManager{enterErr: errors.New("secret platform failure")},
 		requests,
-		Config{ActionTimeout: time.Second, Observer: observer},
+		ControllerOptions{ActionTimeout: time.Second, Observer: observer},
 	)
 
 	if err := controller.Run(context.Background()); err == nil {
@@ -96,20 +95,20 @@ func TestControllerReportsRecoveryRequestAndFailedAction(t *testing.T) {
 
 func TestControllerEntersManualRecoveryAndIgnoresStaleProductionState(t *testing.T) {
 	source := newFakeTransitionSource(
-		stateengine.StageInfrastructure,
-		stateengine.StageInfrastructure,
-		stateengine.StageProvisioning,
-		stateengine.StageInfrastructure,
-		stateengine.StageStopped,
+		StageInfrastructure,
+		StageInfrastructure,
+		StageProvisioning,
+		StageInfrastructure,
+		StageStopped,
 	)
 	provisioning := &fakeProvisioningManager{}
-	requests := recoveryinput.NewRequests()
+	requests := recovery.NewRequests()
 	requests.Request()
 	controller := newTestController(t,
 		source,
 		provisioning,
 		requests,
-		Config{ActionTimeout: time.Second},
+		ControllerOptions{ActionTimeout: time.Second},
 	)
 
 	if err := controller.Run(context.Background()); err != nil {
@@ -125,14 +124,14 @@ func TestControllerEntersManualRecoveryAndIgnoresStaleProductionState(t *testing
 }
 
 func TestControllerRetainsFailedManualRecoveryForRestart(t *testing.T) {
-	requests := recoveryinput.NewRequests()
+	requests := recovery.NewRequests()
 	requests.Request()
 	provisioning := &fakeProvisioningManager{enterErr: errors.New("AP unavailable")}
 	first := newTestController(t,
-		newFakeTransitionSource(stateengine.StageStopped),
+		newFakeTransitionSource(StageStopped),
 		provisioning,
 		requests,
-		Config{ActionTimeout: time.Second},
+		ControllerOptions{ActionTimeout: time.Second},
 	)
 	if err := first.Run(context.Background()); err == nil {
 		t.Fatal("first Run() unexpectedly succeeded")
@@ -143,10 +142,10 @@ func TestControllerRetainsFailedManualRecoveryForRestart(t *testing.T) {
 
 	provisioning.enterErr = nil
 	second := newTestController(t,
-		newFakeTransitionSource(stateengine.StageProvisioning, stateengine.StageStopped),
+		newFakeTransitionSource(StageProvisioning, StageStopped),
 		provisioning,
 		requests,
-		Config{ActionTimeout: time.Second},
+		ControllerOptions{ActionTimeout: time.Second},
 	)
 	if err := second.Run(context.Background()); err != nil {
 		t.Fatalf("second Run() error = %v", err)
@@ -181,13 +180,13 @@ func TestControllerReportsSourceAndActionFailures(t *testing.T) {
 		},
 		{
 			name:         "enter provisioning",
-			source:       newFakeTransitionSource(stateengine.StageProvisioning),
+			source:       newFakeTransitionSource(StageProvisioning),
 			provisioning: &fakeProvisioningManager{enterErr: errors.New("AP failure")},
 			want:         "enter temporary provisioning: AP failure",
 		},
 		{
 			name:         "leave provisioning",
-			source:       newFakeTransitionSource(stateengine.StageInfrastructure),
+			source:       newFakeTransitionSource(StageInfrastructure),
 			provisioning: &fakeProvisioningManager{leaveErr: errors.New("cleanup failure")},
 			want:         "leave temporary provisioning: cleanup failure",
 		},
@@ -198,8 +197,8 @@ func TestControllerReportsSourceAndActionFailures(t *testing.T) {
 			controller := newTestController(t,
 				test.source,
 				test.provisioning,
-				recoveryinput.NewRequests(),
-				Config{ActionTimeout: time.Second},
+				recovery.NewRequests(),
+				ControllerOptions{ActionTimeout: time.Second},
 			)
 			err := controller.Run(context.Background())
 			if err == nil || !strings.Contains(err.Error(), test.want) {
@@ -210,16 +209,16 @@ func TestControllerReportsSourceAndActionFailures(t *testing.T) {
 }
 
 func TestControllerReportsTerminalFailure(t *testing.T) {
-	source := newFakeTransitionSourceWithStates(stateengine.State{
-		Stage:  stateengine.StageFailed,
-		Reason: stateengine.ReasonObservationFailed,
+	source := newFakeTransitionSourceWithStates(State{
+		Stage:  StageFailed,
+		Reason: ReasonObservationFailed,
 		Detail: "D-Bus unavailable",
 	})
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
-		Config{ActionTimeout: time.Second},
+		recovery.NewRequests(),
+		ControllerOptions{ActionTimeout: time.Second},
 	)
 
 	err := controller.Run(context.Background())
@@ -232,15 +231,15 @@ func TestControllerReportsTerminalFailure(t *testing.T) {
 }
 
 func TestControllerClassifiesUnmanagedDeviceAsTerminal(t *testing.T) {
-	source := newFakeTransitionSourceWithStates(stateengine.State{
-		Stage:  stateengine.StageFailed,
-		Reason: stateengine.ReasonDeviceUnmanaged,
+	source := newFakeTransitionSourceWithStates(State{
+		Stage:  StageFailed,
+		Reason: ReasonDeviceUnmanaged,
 	})
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
-		Config{ActionTimeout: time.Second},
+		recovery.NewRequests(),
+		ControllerOptions{ActionTimeout: time.Second},
 	)
 
 	err := controller.Run(context.Background())
@@ -250,16 +249,16 @@ func TestControllerClassifiesUnmanagedDeviceAsTerminal(t *testing.T) {
 }
 
 func TestControllerClassifiesObservationFailureAsRestartable(t *testing.T) {
-	source := newFakeTransitionSourceWithStates(stateengine.State{
-		Stage:  stateengine.StageFailed,
-		Reason: stateengine.ReasonObservationFailed,
+	source := newFakeTransitionSourceWithStates(State{
+		Stage:  StageFailed,
+		Reason: ReasonObservationFailed,
 		Detail: "D-Bus unavailable",
 	})
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
-		Config{ActionTimeout: time.Second},
+		recovery.NewRequests(),
+		ControllerOptions{ActionTimeout: time.Second},
 	)
 
 	err := controller.Run(context.Background())
@@ -269,14 +268,14 @@ func TestControllerClassifiesObservationFailureAsRestartable(t *testing.T) {
 }
 
 func TestControllerCancellationIsNormalShutdown(t *testing.T) {
-	transitions := make(chan stateengine.Transition)
+	transitions := make(chan Transition)
 	errorsOut := make(chan error)
 	source := &fakeTransitionSource{transitions: transitions, errors: errorsOut}
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
-		Config{ActionTimeout: time.Second},
+		recovery.NewRequests(),
+		ControllerOptions{ActionTimeout: time.Second},
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -293,8 +292,8 @@ func TestControllerCancelsSourceAfterFailure(t *testing.T) {
 	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
-		recoveryinput.NewRequests(),
-		Config{ActionTimeout: time.Second},
+		recovery.NewRequests(),
+		ControllerOptions{ActionTimeout: time.Second},
 	)
 
 	if err := controller.Run(context.Background()); err == nil {
@@ -308,25 +307,25 @@ func TestControllerCancelsSourceAfterFailure(t *testing.T) {
 }
 
 func TestNewControllerValidatesDependencies(t *testing.T) {
-	source := newFakeTransitionSource(stateengine.StageStopped)
+	source := newFakeTransitionSource(StageStopped)
 	provisioning := &fakeProvisioningManager{}
-	requests := recoveryinput.NewRequests()
-	if _, err := NewController(nil, provisioning, requests, Config{ActionTimeout: time.Second}); err == nil {
+	requests := recovery.NewRequests()
+	if _, err := NewController(nil, provisioning, requests, ControllerOptions{ActionTimeout: time.Second}); err == nil {
 		t.Fatal("nil transition source accepted")
 	}
-	if _, err := NewController(source, nil, requests, Config{ActionTimeout: time.Second}); err == nil {
+	if _, err := NewController(source, nil, requests, ControllerOptions{ActionTimeout: time.Second}); err == nil {
 		t.Fatal("nil provisioning manager accepted")
 	}
-	if _, err := NewController(source, provisioning, nil, Config{ActionTimeout: time.Second}); err == nil {
+	if _, err := NewController(source, provisioning, nil, ControllerOptions{ActionTimeout: time.Second}); err == nil {
 		t.Fatal("nil recovery request source accepted")
 	}
-	if _, err := NewController(source, provisioning, requests, Config{}); err == nil {
+	if _, err := NewController(source, provisioning, requests, ControllerOptions{}); err == nil {
 		t.Fatal("zero action timeout accepted")
 	}
 }
 
 type fakeTransitionSource struct {
-	transitions <-chan stateengine.Transition
+	transitions <-chan Transition
 	errors      <-chan error
 	startErr    error
 }
@@ -338,8 +337,8 @@ type contextTransitionSource struct {
 
 func (source *contextTransitionSource) Run(
 	ctx context.Context,
-) (<-chan stateengine.Transition, <-chan error, error) {
-	transitions := make(chan stateengine.Transition)
+) (<-chan Transition, <-chan error, error) {
+	transitions := make(chan Transition)
 	close(transitions)
 	errorsOut := make(chan error, 1)
 	errorsOut <- source.sourceErr
@@ -351,18 +350,18 @@ func (source *contextTransitionSource) Run(
 	return transitions, errorsOut, nil
 }
 
-func newFakeTransitionSource(stages ...stateengine.Stage) *fakeTransitionSource {
-	states := make([]stateengine.State, 0, len(stages))
+func newFakeTransitionSource(stages ...Stage) *fakeTransitionSource {
+	states := make([]State, 0, len(stages))
 	for _, stage := range stages {
-		states = append(states, stateengine.State{Stage: stage})
+		states = append(states, State{Stage: stage})
 	}
 	return newFakeTransitionSourceWithStates(states...)
 }
 
-func newFakeTransitionSourceWithStates(states ...stateengine.State) *fakeTransitionSource {
-	transitions := make(chan stateengine.Transition, len(states))
+func newFakeTransitionSourceWithStates(states ...State) *fakeTransitionSource {
+	transitions := make(chan Transition, len(states))
 	for _, current := range states {
-		transitions <- stateengine.Transition{Current: current}
+		transitions <- Transition{Current: current}
 	}
 	close(transitions)
 	errorsOut := make(chan error)
@@ -371,7 +370,7 @@ func newFakeTransitionSourceWithStates(states ...stateengine.State) *fakeTransit
 }
 
 func newFakeTransitionSourceWithError(sourceErr error) *fakeTransitionSource {
-	transitions := make(chan stateengine.Transition)
+	transitions := make(chan Transition)
 	close(transitions)
 	errorsOut := make(chan error, 1)
 	errorsOut <- sourceErr
@@ -381,7 +380,7 @@ func newFakeTransitionSourceWithError(sourceErr error) *fakeTransitionSource {
 
 func (source *fakeTransitionSource) Run(
 	context.Context,
-) (<-chan stateengine.Transition, <-chan error, error) {
+) (<-chan Transition, <-chan error, error) {
 	return source.transitions, source.errors, source.startErr
 }
 
@@ -400,10 +399,10 @@ type fakeLifecycleObserver struct {
 func (observer *fakeLifecycleObserver) ObserveNetworkState(
 	_ context.Context,
 	sequence uint64,
-	stage stateengine.Stage,
-	_ stateengine.Mode,
-	_ stateengine.Reason,
-	_ stateengine.EventKind,
+	stage Stage,
+	_ Mode,
+	_ Reason,
+	_ EventKind,
 ) {
 	observer.states = append(observer.states, fmt.Sprintf("%d:%s", sequence, stage))
 }
@@ -593,7 +592,7 @@ func newTestController(
 	source transitionSource,
 	provisioning provisioningManager,
 	requests recoveryRequests,
-	config Config,
+	config ControllerOptions,
 ) *Controller {
 	t.Helper()
 	controller, err := NewController(source, provisioning, requests, config)

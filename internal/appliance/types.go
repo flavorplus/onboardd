@@ -1,6 +1,4 @@
-// Package state reconciles transient onboardd orchestration state from NetworkManager
-// observations. It deliberately persists nothing itself.
-package state
+package appliance
 
 import (
 	"context"
@@ -120,8 +118,8 @@ type Observer interface {
 	Watch(context.Context) (<-chan NetworkChange, <-chan error, error)
 }
 
-// Config controls transient reconciliation policy.
-type Config struct {
+// EngineOptions controls transient reconciliation policy.
+type EngineOptions struct {
 	Requirement connectivity.Requirement
 	GracePeriod time.Duration
 }
