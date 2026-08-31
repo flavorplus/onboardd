@@ -153,3 +153,46 @@ func (api *fakeAvahi) Close() error {
 }
 
 var _ avahiAPI = (*fakeAvahi)(nil)
+
+func TestValidateOptions(t *testing.T) {
+	tests := []struct {
+		name        string
+		options     Options
+		expectedErr string
+	}{
+		{
+			name:    "service name and port",
+			options: Options{ServiceName: "Display setup", Port: 18080},
+		},
+		{
+			name:        "missing service name",
+			options:     Options{Port: 18080},
+			expectedErr: "mDNS service name is required",
+		},
+		{
+			name:        "blank service name",
+			options:     Options{ServiceName: "   ", Port: 18080},
+			expectedErr: "mDNS service name is required",
+		},
+		{
+			name:        "missing port",
+			options:     Options{ServiceName: "Display setup"},
+			expectedErr: "mDNS service port is required",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateOptions(test.options)
+			if test.expectedErr == "" {
+				if err != nil {
+					t.Fatalf("validateOptions() error = %v, expected none", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.expectedErr) {
+				t.Fatalf("validateOptions() error = %v, expected %q", err, test.expectedErr)
+			}
+		})
+	}
+}
