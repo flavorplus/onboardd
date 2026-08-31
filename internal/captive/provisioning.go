@@ -204,11 +204,6 @@ type ProvisioningSession struct {
 	dnsRemoved     bool
 }
 
-// Activation returns the temporary NetworkManager profile details.
-func (s *ProvisioningSession) Activation() networkmanager.Activation {
-	return s.activation
-}
-
 // Stop deletes the temporary profile and removes wildcard DNS. Successful
 // cleanup steps are remembered while failed steps remain retryable.
 func (s *ProvisioningSession) Stop(ctx context.Context) error {
