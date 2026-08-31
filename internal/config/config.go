@@ -29,9 +29,7 @@ const (
 	CaptivePublicPort uint16 = 80
 )
 
-var (
-	colorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
-)
+var colorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 // Config is the complete resolved onboardd configuration.
 type Config struct {

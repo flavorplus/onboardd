@@ -192,7 +192,8 @@ func validateOptions(options Options) error {
 
 func readHostname(ctx context.Context, api interface {
 	HostName(context.Context) (string, error)
-}) (string, error) {
+},
+) (string, error) {
 	hostname, err := api.HostName(ctx)
 	if err != nil {
 		return "", fmt.Errorf("read Avahi hostname: %w", err)
