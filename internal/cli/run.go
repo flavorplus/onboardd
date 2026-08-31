@@ -184,32 +184,7 @@ func runManagedAppliance(
 		return errors.Join(startErr, stopStartupResources())
 	}
 
-	observer := stateengine.NewNetworkManagerObserver(client, options.Interface)
-	engine, err := stateengine.New(observer, stateengine.Config{
-		Requirement: options.Requirement,
-		GracePeriod: options.ActivationWait,
-	})
-	if err != nil {
-		return errors.Join(err, stopStartupResources())
-	}
-	recoveryRequests := recovery.NewRequests()
-	controller, err := appliance.NewController(
-		engine,
-		components.captive,
-		recoveryRequests,
-		appliance.Config{
-			ActionTimeout: options.ActivationWait + applianceCleanupTimeout,
-			Observer:      lifecycle,
-		},
-	)
-	if err != nil {
-		return errors.Join(err, stopStartupResources())
-	}
-	supervisor, err := appliance.NewSupervisor(controller, appliance.RetryConfig{
-		MaxRestarts:  runtimeMaxRestarts,
-		RestartDelay: runtimeRestartDelay,
-		OnRetry:      retryReporter(lifecycle, observability.ComponentReconciler),
-	})
+	supervisor, recoveryRequests, err := buildReconciler(client, components.captive, options, lifecycle)
 	if err != nil {
 		return errors.Join(err, stopStartupResources())
 	}
@@ -234,66 +209,43 @@ func runManagedAppliance(
 	fmt.Fprintln(stdout, "Manual recovery: sudo onboardd recover")
 	failure = observability.FailureOperational
 
-	type componentResult struct {
-		name      string
-		component observability.Component
-		err       error
-	}
-	componentCount := 3
-	componentResults := make(chan componentResult, 4)
-	go func() {
-		componentResults <- componentResult{
+	supervised := []supervisedComponent{
+		{
 			name:      "appliance controller",
 			component: observability.ComponentReconciler,
-			err:       supervisor.Run(runtimeContext),
-		}
-	}()
-	go func() {
-		componentResults <- componentResult{
+			run:       func() error { return supervisor.Run(runtimeContext) },
+		},
+		{
 			name:      "setup HTTP listener",
 			component: observability.ComponentHTTP,
-			err:       <-listenerDone,
-		}
-	}()
-	go func() {
-		componentResults <- componentResult{
+			run:       func() error { return <-listenerDone },
+		},
+		{
 			name:      "manual recovery control",
 			component: observability.ComponentControl,
-			err:       <-controlDone,
-		}
-	}()
-	if serviceNotifier != nil && serviceNotifier.Enabled() {
-		componentCount++
-		go func() {
-			componentResults <- componentResult{
-				name:      "systemd notifier",
-				component: observability.ComponentSystemd,
-				err:       serviceNotifier.Run(runtimeContext, lifecycle.Health()),
-			}
-		}()
+			run:       func() error { return <-controlDone },
+		},
 	}
-
-	first := <-componentResults
-	wasCanceled := runtimeContext.Err() != nil
-	lifecycle.Stopping(context.WithoutCancel(runtimeContext))
-	cancelRuntime()
-	componentErrors := make([]error, 0, componentCount)
-	if first.err == nil && !wasCanceled {
-		first.err = errors.New("stopped unexpectedly")
+	if serviceNotifier != nil && serviceNotifier.Enabled() {
+		supervised = append(supervised, supervisedComponent{
+			name:      "systemd notifier",
+			component: observability.ComponentSystemd,
+			run: func() error {
+				return serviceNotifier.Run(runtimeContext, lifecycle.Health())
+			},
+		})
+	}
+	componentErrors, failedComponent, unexpected := superviseComponents(
+		runtimeContext,
+		cancelRuntime,
+		lifecycle,
+		supervised,
+	)
+	if unexpected {
 		failure = observability.FailureUnexpected
 	}
-	if first.err != nil {
-		failureComponent = first.component
-		componentErrors = append(componentErrors, fmt.Errorf("%s: %w", first.name, first.err))
-	}
-	for range componentCount - 1 {
-		completed := <-componentResults
-		if completed.err != nil {
-			componentErrors = append(
-				componentErrors,
-				fmt.Errorf("%s: %w", completed.name, completed.err),
-			)
-		}
+	if failedComponent != "" {
+		failureComponent = failedComponent
 	}
 	operationErr := stopOperations()
 	cleanupErr := errors.Join(
@@ -411,6 +363,105 @@ func buildApplianceComponents(
 		setup:   service,
 		handler: handler,
 	}, nil
+}
+
+// supervisedComponent is one long-running part of the appliance.
+type supervisedComponent struct {
+	name      string
+	component observability.Component
+	run       func() error
+}
+
+// superviseComponents runs every component until the first one stops, then
+// cancels the runtime and waits for the rest to finish. A component returning
+// nil without the runtime having been cancelled is itself a failure: nothing is
+// supposed to stop on its own. Failures come back in the order observed, along
+// with the first one's component identity for lifecycle reporting.
+func superviseComponents(
+	runtimeContext context.Context,
+	cancelRuntime context.CancelFunc,
+	lifecycle *observability.Lifecycle,
+	components []supervisedComponent,
+) (failures []error, failed observability.Component, unexpected bool) {
+	type componentResult struct {
+		name      string
+		component observability.Component
+		err       error
+	}
+	results := make(chan componentResult, len(components))
+	for _, component := range components {
+		go func() {
+			results <- componentResult{
+				name:      component.name,
+				component: component.component,
+				err:       component.run(),
+			}
+		}()
+	}
+
+	first := <-results
+	wasCanceled := runtimeContext.Err() != nil
+	lifecycle.Stopping(context.WithoutCancel(runtimeContext))
+	cancelRuntime()
+
+	failures = make([]error, 0, len(components))
+	if first.err == nil && !wasCanceled {
+		first.err = errors.New("stopped unexpectedly")
+		unexpected = true
+	}
+	if first.err != nil {
+		failed = first.component
+		failures = append(failures, fmt.Errorf("%s: %w", first.name, first.err))
+	}
+	for range len(components) - 1 {
+		completed := <-results
+		if completed.err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", completed.name, completed.err))
+		}
+	}
+	return failures, failed, unexpected
+}
+
+// buildReconciler assembles the state engine, the controller that acts on it and
+// the supervisor that restarts the controller. Every failure here is reported
+// the same way by the caller, so they are grouped rather than interleaved with
+// the startup steps that each need their own cleanup.
+func buildReconciler(
+	client *networkmanager.Client,
+	captiveManager *captive.Manager,
+	options setupOptions,
+	lifecycle *observability.Lifecycle,
+) (*appliance.Supervisor, *recovery.Requests, error) {
+	observer := stateengine.NewNetworkManagerObserver(client, options.Interface)
+	engine, err := stateengine.New(observer, stateengine.Config{
+		Requirement: options.Requirement,
+		GracePeriod: options.ActivationWait,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	recoveryRequests := recovery.NewRequests()
+	controller, err := appliance.NewController(
+		engine,
+		captiveManager,
+		recoveryRequests,
+		appliance.Config{
+			ActionTimeout: options.ActivationWait + applianceCleanupTimeout,
+			Observer:      lifecycle,
+		},
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	supervisor, err := appliance.NewSupervisor(controller, appliance.RetryConfig{
+		MaxRestarts:  runtimeMaxRestarts,
+		RestartDelay: runtimeRestartDelay,
+		OnRetry:      retryReporter(lifecycle, observability.ComponentReconciler),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return supervisor, recoveryRequests, nil
 }
 
 func stopManagedResources(
