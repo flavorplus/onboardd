@@ -26,15 +26,12 @@ func TestControllerAppliesOnlyStableStateChanges(t *testing.T) {
 		stateengine.StageStopped,
 	)
 	provisioning := &fakeProvisioningManager{}
-	controller, err := NewController(
+	controller := newTestController(t,
 		source,
 		provisioning,
 		recoveryinput.NewRequests(),
 		Config{ActionTimeout: time.Second},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	if err := controller.Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -56,15 +53,12 @@ func TestControllerReportsNormalizedLifecycleEvents(t *testing.T) {
 		stateengine.State{Sequence: 3, Stage: stateengine.StageStopped},
 	)
 	observer := &fakeLifecycleObserver{}
-	controller, err := NewController(
+	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
 		recoveryinput.NewRequests(),
 		Config{ActionTimeout: time.Second, Observer: observer},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	if err := controller.Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -82,15 +76,12 @@ func TestControllerReportsRecoveryRequestAndFailedAction(t *testing.T) {
 	requests := recoveryinput.NewRequests()
 	requests.Request()
 	observer := &fakeLifecycleObserver{}
-	controller, err := NewController(
+	controller := newTestController(t,
 		newFakeTransitionSource(stateengine.StageStopped),
 		&fakeProvisioningManager{enterErr: errors.New("secret platform failure")},
 		requests,
 		Config{ActionTimeout: time.Second, Observer: observer},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	if err := controller.Run(context.Background()); err == nil {
 		t.Fatal("Run() unexpectedly succeeded")
@@ -114,15 +105,12 @@ func TestControllerEntersManualRecoveryAndIgnoresStaleProductionState(t *testing
 	provisioning := &fakeProvisioningManager{}
 	requests := recoveryinput.NewRequests()
 	requests.Request()
-	controller, err := NewController(
+	controller := newTestController(t,
 		source,
 		provisioning,
 		requests,
 		Config{ActionTimeout: time.Second},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	if err := controller.Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -140,15 +128,12 @@ func TestControllerRetainsFailedManualRecoveryForRestart(t *testing.T) {
 	requests := recoveryinput.NewRequests()
 	requests.Request()
 	provisioning := &fakeProvisioningManager{enterErr: errors.New("AP unavailable")}
-	first, err := NewController(
+	first := newTestController(t,
 		newFakeTransitionSource(stateengine.StageStopped),
 		provisioning,
 		requests,
 		Config{ActionTimeout: time.Second},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := first.Run(context.Background()); err == nil {
 		t.Fatal("first Run() unexpectedly succeeded")
 	}
@@ -157,15 +142,12 @@ func TestControllerRetainsFailedManualRecoveryForRestart(t *testing.T) {
 	}
 
 	provisioning.enterErr = nil
-	second, err := NewController(
+	second := newTestController(t,
 		newFakeTransitionSource(stateengine.StageProvisioning, stateengine.StageStopped),
 		provisioning,
 		requests,
 		Config{ActionTimeout: time.Second},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := second.Run(context.Background()); err != nil {
 		t.Fatalf("second Run() error = %v", err)
 	}
@@ -213,16 +195,13 @@ func TestControllerReportsSourceAndActionFailures(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			controller, err := NewController(
+			controller := newTestController(t,
 				test.source,
 				test.provisioning,
 				recoveryinput.NewRequests(),
 				Config{ActionTimeout: time.Second},
 			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = controller.Run(context.Background())
+			err := controller.Run(context.Background())
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("Run() error = %v, want containing %q", err, test.want)
 			}
@@ -236,17 +215,14 @@ func TestControllerReportsTerminalFailure(t *testing.T) {
 		Reason: stateengine.ReasonObservationFailed,
 		Detail: "D-Bus unavailable",
 	})
-	controller, err := NewController(
+	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
 		recoveryinput.NewRequests(),
 		Config{ActionTimeout: time.Second},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	err = controller.Run(context.Background())
+	err := controller.Run(context.Background())
 	if err == nil || !strings.Contains(
 		err.Error(),
 		"appliance reconciliation failed: observation-failed: D-Bus unavailable",
@@ -260,17 +236,14 @@ func TestControllerClassifiesUnmanagedDeviceAsTerminal(t *testing.T) {
 		Stage:  stateengine.StageFailed,
 		Reason: stateengine.ReasonDeviceUnmanaged,
 	})
-	controller, err := NewController(
+	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
 		recoveryinput.NewRequests(),
 		Config{ActionTimeout: time.Second},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	err = controller.Run(context.Background())
+	err := controller.Run(context.Background())
 	if err == nil || !isTerminal(err) {
 		t.Fatalf("Run() error = %v, want terminal failure", err)
 	}
@@ -282,17 +255,14 @@ func TestControllerClassifiesObservationFailureAsRestartable(t *testing.T) {
 		Reason: stateengine.ReasonObservationFailed,
 		Detail: "D-Bus unavailable",
 	})
-	controller, err := NewController(
+	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
 		recoveryinput.NewRequests(),
 		Config{ActionTimeout: time.Second},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	err = controller.Run(context.Background())
+	err := controller.Run(context.Background())
 	if err == nil || isTerminal(err) {
 		t.Fatalf("Run() error = %v, want restartable failure", err)
 	}
@@ -302,15 +272,12 @@ func TestControllerCancellationIsNormalShutdown(t *testing.T) {
 	transitions := make(chan stateengine.Transition)
 	errorsOut := make(chan error)
 	source := &fakeTransitionSource{transitions: transitions, errors: errorsOut}
-	controller, err := NewController(
+	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
 		recoveryinput.NewRequests(),
 		Config{ActionTimeout: time.Second},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := controller.Run(ctx); err != nil {
@@ -323,15 +290,12 @@ func TestControllerCancelsSourceAfterFailure(t *testing.T) {
 		sourceErr: errors.New("observer failed"),
 		canceled:  make(chan struct{}),
 	}
-	controller, err := NewController(
+	controller := newTestController(t,
 		source,
 		&fakeProvisioningManager{},
 		recoveryinput.NewRequests(),
 		Config{ActionTimeout: time.Second},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	if err := controller.Run(context.Background()); err == nil {
 		t.Fatal("Run() unexpectedly succeeded")
@@ -622,4 +586,19 @@ func (waiter *blockingWaiter) Wait(ctx context.Context, _ time.Duration) error {
 	close(waiter.started)
 	<-ctx.Done()
 	return ctx.Err()
+}
+
+func newTestController(
+	t *testing.T,
+	source transitionSource,
+	provisioning provisioningManager,
+	requests recoveryRequests,
+	config Config,
+) *Controller {
+	t.Helper()
+	controller, err := NewController(source, provisioning, requests, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return controller
 }
