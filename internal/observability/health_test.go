@@ -69,7 +69,7 @@ func TestHealthChangesAreCoalescedAndWatchdogReady(t *testing.T) {
 
 	select {
 	case snapshot := <-health.Changes():
-		if snapshot.Status != StatusReady || !snapshot.WatchdogHealthy() {
+		if snapshot.Status != StatusReady || !snapshot.Healthy {
 			t.Fatalf("coalesced snapshot = %+v", snapshot)
 		}
 	default:

@@ -23,8 +23,8 @@ func TestProvisionerCanStartAgainAfterStop(t *testing.T) {
 		if startErr != nil {
 			t.Fatalf("Start() error = %v", startErr)
 		}
-		if got := session.Activation().UUID; got != "provisioning-uuid" {
-			t.Fatalf("Activation().UUID = %q", got)
+		if got := session.activation.UUID; got != "provisioning-uuid" {
+			t.Fatalf("session activation UUID = %q", got)
 		}
 		stopContext, cancel := context.WithTimeout(context.Background(), time.Second)
 		stopErr := session.Stop(stopContext)

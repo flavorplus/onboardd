@@ -32,7 +32,6 @@ const (
 	ComponentReconciler Component = "reconciler"
 	ComponentHTTP       Component = "setup-http"
 	ComponentControl    Component = "recovery-control"
-	ComponentCaptive    Component = "captive-resources"
 	ComponentSystemd    Component = "systemd-notify"
 )
 
@@ -43,7 +42,6 @@ const (
 	FailureStartup     Failure = "startup"
 	FailureOperational Failure = "operational"
 	FailureExhausted   Failure = "recovery-exhausted"
-	FailureTerminal    Failure = "terminal"
 	FailureUnexpected  Failure = "unexpected-stop"
 )
 
@@ -58,13 +56,6 @@ type Snapshot struct {
 	Mode      stateengine.Mode   `json:"mode,omitempty"`
 	Reason    stateengine.Reason `json:"reason,omitempty"`
 	UpdatedAt time.Time          `json:"updated_at"`
-}
-
-// WatchdogHealthy reports whether a future service watchdog should continue receiving
-// heartbeats. Starting and bounded recovery remain healthy; stopping and terminal
-// failure do not.
-func (snapshot Snapshot) WatchdogHealthy() bool {
-	return snapshot.Healthy
 }
 
 // Health owns the concurrency-safe lifecycle snapshot and a coalesced change signal.

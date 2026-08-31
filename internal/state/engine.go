@@ -51,15 +51,6 @@ func New(observer Observer, config Config) (*Engine, error) {
 	return &Engine{observer: observer, config: config, clock: systemClock{}}, nil
 }
 
-// Inspect performs a one-shot reconciliation without starting a grace timer.
-func (engine *Engine) Inspect(ctx context.Context) (State, error) {
-	snapshot, err := engine.observer.Snapshot(ctx)
-	if err != nil {
-		return State{}, fmt.Errorf("inspect network state: %w", err)
-	}
-	return evaluate(snapshot, engine.config.Requirement, false), nil
-}
-
 // Run watches NetworkManager until the context is cancelled. Cancellation emits a final
 // stopped state and is not reported as an operational error.
 func (engine *Engine) Run(

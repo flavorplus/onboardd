@@ -29,9 +29,9 @@ type standaloneTransition interface {
 }
 
 // CaptiveExiter removes temporary captive resources after a production mode succeeds.
-// ExitCaptive is idempotent so later mode changes can reuse the same backend.
+// LeaveProvisioning is idempotent so later mode changes can reuse the same backend.
 type CaptiveExiter interface {
-	ExitCaptive(context.Context) error
+	LeaveProvisioning(context.Context) error
 }
 
 // NetworkOptions contains runtime policy already resolved from product configuration.
@@ -370,7 +370,7 @@ func (backend *NetworkBackend) exitCaptive(ctx context.Context) error {
 	if backend.captive == nil {
 		return nil
 	}
-	if err := backend.captive.ExitCaptive(ctx); err != nil {
+	if err := backend.captive.LeaveProvisioning(ctx); err != nil {
 		return NewPublicError(
 			"cleanup_failed",
 			"The network changed, but setup could not finish cleaning up. Restart the device before trying again.",

@@ -163,7 +163,7 @@ func BuildAccessPointSettings(options AccessPointOptions) (Settings, string, err
 			"autoconnect":          options.Autoconnect,
 			"autoconnect-priority": options.Priority,
 		}),
-		"802-11-wireless": wirelessVariants(wireless),
+		"802-11-wireless": variants(wireless),
 		"802-11-wireless-security": variants(map[string]any{
 			"key-mgmt": "wpa-psk",
 			"psk":      options.Password,
@@ -294,10 +294,6 @@ func variants(values map[string]any) map[string]dbus.Variant {
 		result[key] = dbus.MakeVariant(value)
 	}
 	return result
-}
-
-func wirelessVariants(values map[string]any) map[string]dbus.Variant {
-	return variants(values)
 }
 
 func validateSSID(ssid string) error {
