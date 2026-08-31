@@ -384,14 +384,14 @@ func (network *fakeSetupNetwork) DeleteOwnedInfrastructureProfile(
 }
 
 type fakeInfrastructureTransition struct {
-	options      recovery.InfrastructureOptions
-	savedOptions recovery.SavedInfrastructureOptions
+	options      recovery.InfrastructureTransition
+	savedOptions recovery.SavedInfrastructureTransition
 	err          error
 }
 
 func (transition *fakeInfrastructureTransition) AttemptSaved(
 	_ context.Context,
-	options recovery.SavedInfrastructureOptions,
+	options recovery.SavedInfrastructureTransition,
 ) (networkmanager.Activation, error) {
 	transition.savedOptions = options
 	return networkmanager.Activation{UUID: options.UUID}, transition.err
@@ -399,20 +399,20 @@ func (transition *fakeInfrastructureTransition) AttemptSaved(
 
 func (transition *fakeInfrastructureTransition) Attempt(
 	_ context.Context,
-	options recovery.InfrastructureOptions,
+	options recovery.InfrastructureTransition,
 ) (networkmanager.Activation, error) {
 	transition.options = options
 	return networkmanager.Activation{UUID: "infrastructure"}, transition.err
 }
 
 type fakeStandaloneTransition struct {
-	options recovery.StandaloneOptions
+	options recovery.StandaloneTransition
 	err     error
 }
 
 func (transition *fakeStandaloneTransition) Attempt(
 	_ context.Context,
-	options recovery.StandaloneOptions,
+	options recovery.StandaloneTransition,
 ) (networkmanager.Activation, error) {
 	transition.options = options
 	return networkmanager.Activation{UUID: "standalone"}, transition.err

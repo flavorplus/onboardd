@@ -212,7 +212,7 @@ func evaluate(
 		return State{Stage: StageStandalone, Mode: ModeStandalone, Reason: ReasonStandaloneActive}
 	}
 	if hasAutoconnectProfile(snapshot.Profiles, ModeStandalone) {
-		if snapshot.DeviceState == DeviceFailed {
+		if snapshot.DeviceCondition == DeviceFailed {
 			return State{Stage: StageProvisioning, Mode: ModeProvisioning, Reason: ReasonActivationFailed}
 		}
 		if timedOut {
@@ -230,7 +230,7 @@ func evaluate(
 	if !hasInfrastructure {
 		return State{Stage: StageProvisioning, Mode: ModeProvisioning, Reason: ReasonNoCandidate}
 	}
-	if snapshot.DeviceState == DeviceFailed {
+	if snapshot.DeviceCondition == DeviceFailed {
 		return State{Stage: StageProvisioning, Mode: ModeProvisioning, Reason: ReasonActivationFailed}
 	}
 
@@ -264,7 +264,7 @@ func evaluate(
 	}
 }
 
-func hasAutoconnectProfile(profiles []Profile, mode Mode) bool {
+func hasAutoconnectProfile(profiles []ProfileSummary, mode Mode) bool {
 	for _, profile := range profiles {
 		if profile.Mode == mode && profile.Autoconnect {
 			return true
@@ -307,12 +307,12 @@ func (observer *NetworkManagerObserver) Snapshot(ctx context.Context) (Snapshot,
 		return Snapshot{}, err
 	}
 
-	normalizedProfiles := make([]Profile, 0, len(profiles))
+	normalizedProfiles := make([]ProfileSummary, 0, len(profiles))
 	activeMode := ModeNone
 	for _, profile := range profiles {
 		mode := profileMode(profile)
 		if profile.Interface == observer.interfaceName && mode != ModeNone {
-			normalizedProfiles = append(normalizedProfiles, Profile{
+			normalizedProfiles = append(normalizedProfiles, ProfileSummary{
 				UUID:        profile.UUID,
 				Mode:        mode,
 				Autoconnect: profile.Autoconnect,
@@ -324,12 +324,12 @@ func (observer *NetworkManagerObserver) Snapshot(ctx context.Context) (Snapshot,
 	}
 
 	return Snapshot{
-		DeviceManaged: status.Device.Managed,
-		DeviceState:   normalizedDeviceState(status.Device.State),
-		ActiveUUID:    status.Device.ActiveUUID,
-		ActiveMode:    activeMode,
-		Connectivity:  status.Observation(),
-		Profiles:      normalizedProfiles,
+		DeviceManaged:   status.Device.Managed,
+		DeviceCondition: normalizedDeviceState(status.Device.State),
+		ActiveUUID:      status.Device.ActiveUUID,
+		ActiveMode:      activeMode,
+		Connectivity:    status.Observation(),
+		Profiles:        normalizedProfiles,
 	}, nil
 }
 
@@ -390,7 +390,7 @@ func profileMode(profile networkmanager.Profile) Mode {
 	return ModeNone
 }
 
-func normalizedDeviceState(value networkmanager.DeviceState) DeviceState {
+func normalizedDeviceState(value networkmanager.DeviceState) DeviceCondition {
 	switch value {
 	case networkmanager.DeviceStateDisconnected:
 		return DeviceDisconnected

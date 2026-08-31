@@ -20,12 +20,12 @@ type networkClient interface {
 }
 
 type infrastructureTransition interface {
-	Attempt(context.Context, recovery.InfrastructureOptions) (networkmanager.Activation, error)
-	AttemptSaved(context.Context, recovery.SavedInfrastructureOptions) (networkmanager.Activation, error)
+	Attempt(context.Context, recovery.InfrastructureTransition) (networkmanager.Activation, error)
+	AttemptSaved(context.Context, recovery.SavedInfrastructureTransition) (networkmanager.Activation, error)
 }
 
 type standaloneTransition interface {
-	Attempt(context.Context, recovery.StandaloneOptions) (networkmanager.Activation, error)
+	Attempt(context.Context, recovery.StandaloneTransition) (networkmanager.Activation, error)
 }
 
 // CaptiveExiter removes temporary captive resources after a production mode succeeds.
@@ -226,7 +226,7 @@ func (backend *NetworkBackend) Connect(ctx context.Context, request ConnectionRe
 	if err != nil {
 		return err
 	}
-	_, err = backend.infrastructure.Attempt(ctx, recovery.InfrastructureOptions{
+	_, err = backend.infrastructure.Attempt(ctx, recovery.InfrastructureTransition{
 		Interface: backend.options.Interface,
 		Candidate: networkmanager.InfrastructureOptions{
 			SSID:     request.SSID,
@@ -264,7 +264,7 @@ func (backend *NetworkBackend) ConnectKnownNetwork(ctx context.Context, uuid str
 	if err != nil {
 		return err
 	}
-	_, err = backend.infrastructure.AttemptSaved(ctx, recovery.SavedInfrastructureOptions{
+	_, err = backend.infrastructure.AttemptSaved(ctx, recovery.SavedInfrastructureTransition{
 		Interface:       backend.options.Interface,
 		UUID:            profile.UUID,
 		SSID:            profile.SSID,
@@ -290,7 +290,7 @@ func (backend *NetworkBackend) Standalone(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = backend.standalone.Attempt(ctx, recovery.StandaloneOptions{
+	_, err = backend.standalone.Attempt(ctx, recovery.StandaloneTransition{
 		Interface:       backend.options.Interface,
 		Candidate:       backend.options.Standalone,
 		ActivationWait:  backend.options.ActivationWait,

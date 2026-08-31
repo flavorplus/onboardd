@@ -195,9 +195,9 @@ var standaloneMessages = transitionMessages{
 	rejected:   "remove rejected standalone profile",
 }
 
-// InfrastructureOptions describes a candidate connection and the active connection
+// InfrastructureTransition describes a candidate connection and the active connection
 // that must be restored if the candidate is rejected.
-type InfrastructureOptions struct {
+type InfrastructureTransition struct {
 	Interface       string
 	Candidate       networkmanager.InfrastructureOptions
 	Requirement     connectivity.Requirement
@@ -208,9 +208,9 @@ type InfrastructureOptions struct {
 	PreviousAddress netip.Addr
 }
 
-// SavedInfrastructureOptions describes an existing onboardd-owned infrastructure
+// SavedInfrastructureTransition describes an existing onboardd-owned infrastructure
 // profile and the active connection that must be restored if validation fails.
-type SavedInfrastructureOptions struct {
+type SavedInfrastructureTransition struct {
 	Interface       string
 	UUID            string
 	SSID            string
@@ -240,7 +240,7 @@ func NewInfrastructure(network networkManager) (*Infrastructure, error) {
 // active again.
 func (transition *Infrastructure) Attempt(
 	ctx context.Context,
-	options InfrastructureOptions,
+	options InfrastructureTransition,
 ) (networkmanager.Activation, error) {
 	if err := validateTransitionOptions(infrastructureCheck(
 		options.Interface,
@@ -283,7 +283,7 @@ func (transition *Infrastructure) Attempt(
 // deleting it before the protected transition succeeds.
 func (transition *Infrastructure) AttemptSaved(
 	ctx context.Context,
-	options SavedInfrastructureOptions,
+	options SavedInfrastructureTransition,
 ) (networkmanager.Activation, error) {
 	if options.UUID == "" {
 		return networkmanager.Activation{}, errors.New("saved profile uuid is required")
@@ -355,9 +355,9 @@ func (transition *Infrastructure) accept(
 	}
 }
 
-// StandaloneOptions describes a standalone candidate and the active connection restored
+// StandaloneTransition describes a standalone candidate and the active connection restored
 // if it cannot be activated.
-type StandaloneOptions struct {
+type StandaloneTransition struct {
 	Interface       string
 	Candidate       networkmanager.AccessPointOptions
 	ActivationWait  time.Duration
@@ -384,7 +384,7 @@ func NewStandalone(network standaloneNetworkManager) (*Standalone, error) {
 // setup AP before returning.
 func (transition *Standalone) Attempt(
 	ctx context.Context,
-	options StandaloneOptions,
+	options StandaloneTransition,
 ) (networkmanager.Activation, error) {
 	if err := validateTransitionOptions(transitionCheck{
 		interfaceName:      options.Interface,
