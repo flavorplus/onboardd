@@ -18,7 +18,6 @@ import (
 	"github.com/flavorplus/onboardd/internal/observability"
 	"github.com/flavorplus/onboardd/internal/recovery"
 	setupflow "github.com/flavorplus/onboardd/internal/setup"
-	stateengine "github.com/flavorplus/onboardd/internal/state"
 	webui "github.com/flavorplus/onboardd/internal/web"
 )
 
@@ -432,8 +431,8 @@ func buildReconciler(
 	options setupOptions,
 	lifecycle *observability.Lifecycle,
 ) (*appliance.Supervisor, *recovery.Requests, error) {
-	observer := stateengine.NewNetworkManagerObserver(client, options.Interface)
-	engine, err := stateengine.New(observer, stateengine.Config{
+	observer := appliance.NewNetworkManagerObserver(client, options.Interface)
+	engine, err := appliance.NewEngine(observer, appliance.EngineOptions{
 		Requirement: options.Requirement,
 		GracePeriod: options.ActivationWait,
 	})
@@ -445,7 +444,7 @@ func buildReconciler(
 		engine,
 		captiveManager,
 		recoveryRequests,
-		appliance.Config{
+		appliance.ControllerOptions{
 			ActionTimeout: options.ActivationWait + applianceCleanupTimeout,
 			Observer:      lifecycle,
 		},

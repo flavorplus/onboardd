@@ -1,5 +1,8 @@
-// Package appliance coordinates normalized network state with long-running appliance
-// resources. Platform-specific provisioning and serving remain behind small adapters.
+// Package appliance reconciles the appliance's network state and acts on it. The
+// engine derives transient state from NetworkManager observations and persists
+// nothing itself; the controller drives long-running resources from the resulting
+// transitions. Platform-specific provisioning and serving remain behind small
+// adapters.
 package appliance
 
 import (
@@ -7,13 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	stateengine "github.com/flavorplus/onboardd/internal/state"
 )
 
-// Config contains internal controller policy. These timings are implementation policy,
+// ControllerOptions contains internal controller policy. These timings are implementation policy,
 // not part of the product configuration contract.
-type Config struct {
+type ControllerOptions struct {
 	ActionTimeout time.Duration
 	Observer      LifecycleObserver
 }
@@ -24,17 +25,17 @@ type LifecycleObserver interface {
 	ObserveNetworkState(
 		context.Context,
 		uint64,
-		stateengine.Stage,
-		stateengine.Mode,
-		stateengine.Reason,
-		stateengine.EventKind,
+		Stage,
+		Mode,
+		Reason,
+		EventKind,
 	)
 	RecoveryRequested(context.Context)
 	ProvisioningAction(context.Context, bool, bool)
 }
 
 type transitionSource interface {
-	Run(context.Context) (<-chan stateengine.Transition, <-chan error, error)
+	Run(context.Context) (<-chan Transition, <-chan error, error)
 }
 
 type provisioningManager interface {
@@ -53,16 +54,16 @@ type recoveryRequests interface {
 type Controller struct {
 	source       transitionSource
 	provisioning provisioningManager
-	recovery     recoveryRequests
-	config       Config
+	requests     recoveryRequests
+	config       ControllerOptions
 }
 
 // NewController validates dependencies and creates an appliance controller.
 func NewController(
 	source transitionSource,
 	provisioning provisioningManager,
-	recovery recoveryRequests,
-	config Config,
+	requests recoveryRequests,
+	config ControllerOptions,
 ) (*Controller, error) {
 	if source == nil {
 		return nil, errors.New("transition source is required")
@@ -70,7 +71,7 @@ func NewController(
 	if provisioning == nil {
 		return nil, errors.New("provisioning manager is required")
 	}
-	if recovery == nil {
+	if requests == nil {
 		return nil, errors.New("recovery request source is required")
 	}
 	if config.ActionTimeout <= 0 {
@@ -79,7 +80,7 @@ func NewController(
 	return &Controller{
 		source:       source,
 		provisioning: provisioning,
-		recovery:     recovery,
+		requests:     requests,
 		config:       config,
 	}, nil
 }
@@ -96,7 +97,7 @@ func (controller *Controller) Run(ctx context.Context) error {
 
 	current := actionNone
 	awaitingProvisioning := false
-	if controller.recovery.Pending() {
+	if controller.requests.Pending() {
 		controller.observeRecovery(runContext)
 		if err := controller.applyRecovery(runContext, &current, &awaitingProvisioning); err != nil {
 			return err
@@ -112,7 +113,7 @@ func (controller *Controller) Run(ctx context.Context) error {
 				continue
 			}
 			controller.observeNetworkState(runContext, transition)
-			if transition.Current.Stage == stateengine.StageStopped {
+			if transition.Current.Stage == StageStopped {
 				return nil
 			}
 			next, actionErr := actionFor(transition.Current)
@@ -135,8 +136,8 @@ func (controller *Controller) Run(ctx context.Context) error {
 				return err
 			}
 			current = next
-		case <-controller.recovery.Notifications():
-			if !controller.recovery.Pending() {
+		case <-controller.requests.Notifications():
+			if !controller.requests.Pending() {
 				continue
 			}
 			controller.observeRecovery(runContext)
@@ -172,13 +173,13 @@ func (controller *Controller) applyRecovery(
 	awaitingProvisioning *bool,
 ) error {
 	if *current == actionEnterProvisioning {
-		controller.recovery.Complete()
+		controller.requests.Complete()
 		return nil
 	}
 	if err := controller.apply(ctx, actionEnterProvisioning); err != nil {
 		return err
 	}
-	controller.recovery.Complete()
+	controller.requests.Complete()
 	*current = actionEnterProvisioning
 	*awaitingProvisioning = true
 	return nil
@@ -192,17 +193,17 @@ const (
 	actionLeaveProvisioning
 )
 
-func actionFor(current stateengine.State) (action, error) {
+func actionFor(current State) (action, error) {
 	switch current.Stage {
-	case stateengine.StageBooting,
-		stateengine.StageReconciling,
-		stateengine.StageWaitingForConnectivity:
+	case StageBooting,
+		StageReconciling,
+		StageWaitingForConnectivity:
 		return actionNone, nil
-	case stateengine.StageProvisioning:
+	case StageProvisioning:
 		return actionEnterProvisioning, nil
-	case stateengine.StageInfrastructure, stateengine.StageStandalone:
+	case StageInfrastructure, StageStandalone:
 		return actionLeaveProvisioning, nil
-	case stateengine.StageFailed:
+	case StageFailed:
 		var err error
 		if current.Detail == "" {
 			err = fmt.Errorf("appliance reconciliation failed: %s", current.Reason)
@@ -213,11 +214,11 @@ func actionFor(current stateengine.State) (action, error) {
 				current.Detail,
 			)
 		}
-		if current.Reason == stateengine.ReasonObservationFailed {
+		if current.Reason == ReasonObservationFailed {
 			return actionNone, err
 		}
 		return actionNone, markTerminal(err)
-	case stateengine.StageStopped:
+	case StageStopped:
 		return actionNone, nil
 	default:
 		return actionNone, markTerminal(fmt.Errorf("unsupported appliance state %q", current.Stage))
@@ -249,7 +250,7 @@ func (controller *Controller) apply(ctx context.Context, next action) error {
 
 func (controller *Controller) observeNetworkState(
 	ctx context.Context,
-	transition stateengine.Transition,
+	transition Transition,
 ) {
 	if controller.config.Observer != nil {
 		current := transition.Current

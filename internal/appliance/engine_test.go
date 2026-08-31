@@ -1,4 +1,4 @@
-package state
+package appliance
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 
 func TestSuccessfulStartup(t *testing.T) {
 	observer := newFakeObserver(readyInfrastructureSnapshot())
-	engine, _ := New(observer, Config{
+	engine, _ := NewEngine(observer, EngineOptions{
 		Requirement: connectivity.RequirementLocal,
 		GracePeriod: time.Minute,
 	})
@@ -38,7 +38,7 @@ func TestFailedActivationFallsBackToProvisioning(t *testing.T) {
 		},
 	}
 	observer := newFakeObserver(snapshot)
-	engine, _ := New(observer, Config{
+	engine, _ := NewEngine(observer, EngineOptions{
 		Requirement: connectivity.RequirementLocal,
 		GracePeriod: time.Minute,
 	})
@@ -60,7 +60,7 @@ func TestInternetConnectivityFailureExpiresGracePeriod(t *testing.T) {
 	snapshot.Connectivity.Internet = connectivity.InternetLimited
 	observer := newFakeObserver(snapshot)
 	manualClock := newFakeClock()
-	engine, _ := New(observer, Config{
+	engine, _ := NewEngine(observer, EngineOptions{
 		Requirement: connectivity.RequirementInternet,
 		GracePeriod: time.Minute,
 	})
@@ -93,7 +93,7 @@ func TestStandaloneIntentSurvivesProcessRestart(t *testing.T) {
 
 	for run := 1; run <= 2; run++ {
 		observer := newFakeObserver(snapshot)
-		engine, _ := New(observer, Config{
+		engine, _ := NewEngine(observer, EngineOptions{
 			Requirement: connectivity.RequirementInternet,
 			GracePeriod: time.Minute,
 		})
@@ -113,7 +113,7 @@ func TestStandaloneIntentSurvivesProcessRestart(t *testing.T) {
 func TestDisconnectionStartsGraceThenProvisioning(t *testing.T) {
 	observer := newFakeObserver(readyInfrastructureSnapshot())
 	manualClock := newFakeClock()
-	engine, _ := New(observer, Config{
+	engine, _ := NewEngine(observer, EngineOptions{
 		Requirement: connectivity.RequirementLocal,
 		GracePeriod: time.Minute,
 	})
@@ -154,7 +154,7 @@ func TestInterruptedTransitionStopsTimer(t *testing.T) {
 	}
 	observer := newFakeObserver(snapshot)
 	manualClock := newFakeClock()
-	engine, _ := New(observer, Config{
+	engine, _ := NewEngine(observer, EngineOptions{
 		Requirement: connectivity.RequirementLocal,
 		GracePeriod: time.Minute,
 	})
@@ -188,7 +188,7 @@ func TestStandaloneActivationExpiresGracePeriod(t *testing.T) {
 	}
 	observer := newFakeObserver(snapshot)
 	manualClock := newFakeClock()
-	engine, _ := New(observer, Config{
+	engine, _ := NewEngine(observer, EngineOptions{
 		Requirement: connectivity.RequirementInternet,
 		GracePeriod: time.Minute,
 	})
@@ -232,13 +232,13 @@ func TestActiveStandaloneDoesNotRequireInternet(t *testing.T) {
 
 func TestNewValidatesConfiguration(t *testing.T) {
 	observer := newFakeObserver(Snapshot{})
-	if _, err := New(nil, Config{Requirement: connectivity.RequirementLocal, GracePeriod: time.Second}); err == nil {
+	if _, err := NewEngine(nil, EngineOptions{Requirement: connectivity.RequirementLocal, GracePeriod: time.Second}); err == nil {
 		t.Fatal("nil observer unexpectedly accepted")
 	}
-	if _, err := New(observer, Config{Requirement: "invalid", GracePeriod: time.Second}); err == nil {
+	if _, err := NewEngine(observer, EngineOptions{Requirement: "invalid", GracePeriod: time.Second}); err == nil {
 		t.Fatal("invalid requirement unexpectedly accepted")
 	}
-	if _, err := New(observer, Config{Requirement: connectivity.RequirementLocal}); err == nil {
+	if _, err := NewEngine(observer, EngineOptions{Requirement: connectivity.RequirementLocal}); err == nil {
 		t.Fatal("zero grace period unexpectedly accepted")
 	}
 }

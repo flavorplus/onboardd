@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	stateengine "github.com/flavorplus/onboardd/internal/state"
+	"github.com/flavorplus/onboardd/internal/appliance"
 )
 
 func TestLifecycleEmitsStructuredRedactedEvents(t *testing.T) {
@@ -18,18 +18,18 @@ func TestLifecycleEmitsStructuredRedactedEvents(t *testing.T) {
 	lifecycle.ObserveNetworkState(
 		context.Background(),
 		7,
-		stateengine.StageReconciling,
-		stateengine.ModeNone,
-		stateengine.ReasonInspectingNetwork,
-		stateengine.EventBoot,
+		appliance.StageReconciling,
+		appliance.ModeNone,
+		appliance.ReasonInspectingNetwork,
+		appliance.EventBoot,
 	)
 	lifecycle.ObserveNetworkState(
 		context.Background(),
 		8,
-		stateengine.StageFailed,
-		stateengine.ModeNone,
-		stateengine.ReasonObservationFailed,
-		stateengine.EventNetworkChanged,
+		appliance.StageFailed,
+		appliance.ModeNone,
+		appliance.ReasonObservationFailed,
+		appliance.EventNetworkChanged,
 	)
 	lifecycle.RecoveryRequested(context.Background())
 	lifecycle.ProvisioningAction(context.Background(), true, true)

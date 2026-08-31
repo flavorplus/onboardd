@@ -115,8 +115,8 @@ infrastructure/standalone profiles and foreign profiles remain untouched.
 ```text
 main.go                    process entry point
 internal/cli               production command parsing and runtime assembly
-internal/appliance         controller/supervisor lifecycle
-internal/state             reconciliation engine and NetworkManager observer
+internal/appliance         reconciliation engine, NetworkManager observer, and the
+                           controller/supervisor lifecycle that acts on them
 internal/networkmanager    narrow typed D-Bus adapter
 internal/captive           provisioning, DNS, redirect, and HTTP listener
 internal/recovery          protected transitions and recovery control socket
