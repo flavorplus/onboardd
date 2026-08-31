@@ -14,6 +14,7 @@ import (
 	"github.com/flavorplus/onboardd/internal/appliance"
 	"github.com/flavorplus/onboardd/internal/captive"
 	"github.com/flavorplus/onboardd/internal/discovery"
+	"github.com/flavorplus/onboardd/internal/networkmanager"
 	"github.com/flavorplus/onboardd/internal/observability"
 	"github.com/flavorplus/onboardd/internal/recovery"
 	setupflow "github.com/flavorplus/onboardd/internal/setup"
@@ -89,78 +90,23 @@ func runManagedAppliance(
 			)
 		}
 	}()
-	redirect, err := captive.NewNFTRedirect("nft")
-	if err != nil {
-		return err
-	}
-	provisioner, err := captive.NewProvisioner(client, dns)
-	if err != nil {
-		return err
-	}
-	captiveManager, err := captive.NewManager(
-		provisioner,
-		redirect,
-		captive.ManagerOptions{
-			Provisioning: captive.ProvisioningOptions{
-				Interface: options.Interface,
-				SSID:      options.ProvisioningSSID,
-				Password:  options.ProvisioningPSK,
-				Address:   options.ProvisioningAddress,
-				Band:      options.Band,
-				Wait:      options.ActivationWait,
-			},
-			PublicHTTPPort:   options.PublicHTTPPort,
-			ListenerHTTPPort: options.ListenerHTTPPort,
-			CleanupTimeout:   applianceCleanupTimeout,
-		},
+	components, err := buildApplianceComponents(
+		runtimeContext,
+		client,
+		dns,
+		landingPage,
+		options,
+		lifecycle,
 	)
-	if err != nil {
-		return err
-	}
-
-	backend, err := newNetworkBackend(client, captiveManager, options)
-	if err != nil {
-		return err
-	}
-	service, err := setupflow.NewService(runtimeContext, backend, setupflow.Capabilities{
-		Network:    options.NetworkEnabled,
-		Standalone: options.StandaloneEnabled,
-	})
 	if err != nil {
 		return err
 	}
 	stopOperations := func() error {
 		return shutdownSetupOperations(
 			runtimeContext,
-			service,
+			components.setup,
 			options.RestorationWait+applianceCleanupTimeout,
 		)
-	}
-	api, err := webui.NewAPI(
-		service,
-		options.PortalOrigin,
-		webui.Authentication{Password: options.AdminPassword},
-		options.Branding,
-	)
-	if err != nil {
-		return err
-	}
-	applicationHandler, err := webui.NewHandler(api, options.Assets, options.Branding)
-	if err != nil {
-		return err
-	}
-	setupHandler := http.NewServeMux()
-	setupHandler.Handle("/healthz", lifecycle.Health())
-	setupHandler.Handle("/", applicationHandler)
-	handler, err := captive.NewHTTPHandler(
-		options.PortalURL,
-		options.Branding.Handoff.SetupURL,
-		options.ListenerHTTPPort,
-		landingPage,
-		setupHandler,
-	)
-	if err != nil {
-		return err
 	}
 
 	listenConfig := &net.ListenConfig{}
@@ -168,7 +114,7 @@ func runManagedAppliance(
 	httpService, err := captive.StartHTTPService(
 		runtimeContext,
 		listenConfig.Listen,
-		handler,
+		components.handler,
 		captive.HTTPServiceOptions{
 			Network:         "tcp4",
 			Address:         listenAddress,
@@ -197,7 +143,7 @@ func runManagedAppliance(
 		applianceCleanupTimeout,
 	)
 	startupRecoveryErr := errors.Join(
-		captiveManager.RecoverStartup(startupRecoveryContext),
+		components.captive.RecoverStartup(startupRecoveryContext),
 		client.DeletePendingInfrastructureProfiles(
 			startupRecoveryContext,
 			options.Interface,
@@ -226,7 +172,7 @@ func runManagedAppliance(
 		return errors.Join(
 			listenerErr,
 			operationErr,
-			stopManagedResources(runtimeContext, captiveManager, publisher),
+			stopManagedResources(runtimeContext, components.captive, publisher),
 		)
 	}
 	if !strings.EqualFold(publisher.Hostname(), options.Hostname) {
@@ -238,32 +184,7 @@ func runManagedAppliance(
 		return errors.Join(startErr, stopStartupResources())
 	}
 
-	observer := stateengine.NewNetworkManagerObserver(client, options.Interface)
-	engine, err := stateengine.New(observer, stateengine.Config{
-		Requirement: options.Requirement,
-		GracePeriod: options.ActivationWait,
-	})
-	if err != nil {
-		return errors.Join(err, stopStartupResources())
-	}
-	recoveryRequests := recovery.NewRequests()
-	controller, err := appliance.NewController(
-		engine,
-		captiveManager,
-		recoveryRequests,
-		appliance.Config{
-			ActionTimeout: options.ActivationWait + applianceCleanupTimeout,
-			Observer:      lifecycle,
-		},
-	)
-	if err != nil {
-		return errors.Join(err, stopStartupResources())
-	}
-	supervisor, err := appliance.NewSupervisor(controller, appliance.RetryConfig{
-		MaxRestarts:  runtimeMaxRestarts,
-		RestartDelay: runtimeRestartDelay,
-		OnRetry:      retryReporter(lifecycle, observability.ComponentReconciler),
-	})
+	supervisor, recoveryRequests, err := buildReconciler(client, components.captive, options, lifecycle)
 	if err != nil {
 		return errors.Join(err, stopStartupResources())
 	}
@@ -288,71 +209,48 @@ func runManagedAppliance(
 	fmt.Fprintln(stdout, "Manual recovery: sudo onboardd recover")
 	failure = observability.FailureOperational
 
-	type componentResult struct {
-		name      string
-		component observability.Component
-		err       error
-	}
-	componentCount := 3
-	componentResults := make(chan componentResult, 4)
-	go func() {
-		componentResults <- componentResult{
+	supervised := []supervisedComponent{
+		{
 			name:      "appliance controller",
 			component: observability.ComponentReconciler,
-			err:       supervisor.Run(runtimeContext),
-		}
-	}()
-	go func() {
-		componentResults <- componentResult{
+			run:       func() error { return supervisor.Run(runtimeContext) },
+		},
+		{
 			name:      "setup HTTP listener",
 			component: observability.ComponentHTTP,
-			err:       <-listenerDone,
-		}
-	}()
-	go func() {
-		componentResults <- componentResult{
+			run:       func() error { return <-listenerDone },
+		},
+		{
 			name:      "manual recovery control",
 			component: observability.ComponentControl,
-			err:       <-controlDone,
-		}
-	}()
-	if serviceNotifier != nil && serviceNotifier.Enabled() {
-		componentCount++
-		go func() {
-			componentResults <- componentResult{
-				name:      "systemd notifier",
-				component: observability.ComponentSystemd,
-				err:       serviceNotifier.Run(runtimeContext, lifecycle.Health()),
-			}
-		}()
+			run:       func() error { return <-controlDone },
+		},
 	}
-
-	first := <-componentResults
-	wasCanceled := runtimeContext.Err() != nil
-	lifecycle.Stopping(context.WithoutCancel(runtimeContext))
-	cancelRuntime()
-	componentErrors := make([]error, 0, componentCount)
-	if first.err == nil && !wasCanceled {
-		first.err = errors.New("stopped unexpectedly")
+	if serviceNotifier != nil && serviceNotifier.Enabled() {
+		supervised = append(supervised, supervisedComponent{
+			name:      "systemd notifier",
+			component: observability.ComponentSystemd,
+			run: func() error {
+				return serviceNotifier.Run(runtimeContext, lifecycle.Health())
+			},
+		})
+	}
+	componentErrors, failedComponent, unexpected := superviseComponents(
+		runtimeContext,
+		cancelRuntime,
+		lifecycle,
+		supervised,
+	)
+	if unexpected {
 		failure = observability.FailureUnexpected
 	}
-	if first.err != nil {
-		failureComponent = first.component
-		componentErrors = append(componentErrors, fmt.Errorf("%s: %w", first.name, first.err))
-	}
-	for range componentCount - 1 {
-		completed := <-componentResults
-		if completed.err != nil {
-			componentErrors = append(
-				componentErrors,
-				fmt.Errorf("%s: %w", completed.name, completed.err),
-			)
-		}
+	if failedComponent != "" {
+		failureComponent = failedComponent
 	}
 	operationErr := stopOperations()
 	cleanupErr := errors.Join(
 		operationErr,
-		stopManagedResources(runtimeContext, captiveManager, publisher),
+		stopManagedResources(runtimeContext, components.captive, publisher),
 	)
 	if len(componentErrors) > 0 || cleanupErr != nil {
 		return errors.Join(errors.Join(componentErrors...), cleanupErr)
@@ -370,6 +268,200 @@ func retryReporter(
 	return func(ctx context.Context, attempt, maximum int) {
 		lifecycle.ComponentRetry(ctx, component, attempt, maximum)
 	}
+}
+
+// applianceComponents is everything the appliance constructs before it starts
+// anything. Construction carries no cleanup obligation: every failure below is a
+// plain return because nothing has been started yet.
+type applianceComponents struct {
+	captive *captive.Manager
+	setup   *setupflow.Service
+	handler http.Handler
+}
+
+// buildApplianceComponents wires the captive plumbing, the setup workflow, and
+// the HTTP handler that fronts them. The D-Bus client and the DNS configuration
+// are created by the caller so that a bad configuration path is still reported
+// before the system bus is dialled.
+func buildApplianceComponents(
+	runtimeContext context.Context,
+	client *networkmanager.Client,
+	dns *captive.DNSConfigFile,
+	landingPage []byte,
+	options setupOptions,
+	lifecycle *observability.Lifecycle,
+) (applianceComponents, error) {
+	redirect, err := captive.NewNFTRedirect("nft")
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	provisioner, err := captive.NewProvisioner(client, dns)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	captiveManager, err := captive.NewManager(
+		provisioner,
+		redirect,
+		captive.ManagerOptions{
+			Provisioning: captive.ProvisioningOptions{
+				Interface: options.Interface,
+				SSID:      options.ProvisioningSSID,
+				Password:  options.ProvisioningPSK,
+				Address:   options.ProvisioningAddress,
+				Band:      options.Band,
+				Wait:      options.ActivationWait,
+			},
+			PublicHTTPPort:   options.PublicHTTPPort,
+			ListenerHTTPPort: options.ListenerHTTPPort,
+			CleanupTimeout:   applianceCleanupTimeout,
+		},
+	)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+
+	backend, err := newNetworkBackend(client, captiveManager, options)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	service, err := setupflow.NewService(runtimeContext, backend, setupflow.Capabilities{
+		Network:    options.NetworkEnabled,
+		Standalone: options.StandaloneEnabled,
+	})
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	api, err := webui.NewAPI(
+		service,
+		options.PortalOrigin,
+		webui.Authentication{Password: options.AdminPassword},
+		options.Branding,
+	)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	applicationHandler, err := webui.NewHandler(api, options.Assets, options.Branding)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+	setupHandler := http.NewServeMux()
+	setupHandler.Handle("/healthz", lifecycle.Health())
+	setupHandler.Handle("/", applicationHandler)
+	handler, err := captive.NewHTTPHandler(
+		options.PortalURL,
+		options.Branding.Handoff.SetupURL,
+		options.ListenerHTTPPort,
+		landingPage,
+		setupHandler,
+	)
+	if err != nil {
+		return applianceComponents{}, err
+	}
+
+	return applianceComponents{
+		captive: captiveManager,
+		setup:   service,
+		handler: handler,
+	}, nil
+}
+
+// supervisedComponent is one long-running part of the appliance.
+type supervisedComponent struct {
+	name      string
+	component observability.Component
+	run       func() error
+}
+
+// superviseComponents runs every component until the first one stops, then
+// cancels the runtime and waits for the rest to finish. A component returning
+// nil without the runtime having been cancelled is itself a failure: nothing is
+// supposed to stop on its own. Failures come back in the order observed, along
+// with the first one's component identity for lifecycle reporting.
+func superviseComponents(
+	runtimeContext context.Context,
+	cancelRuntime context.CancelFunc,
+	lifecycle *observability.Lifecycle,
+	components []supervisedComponent,
+) (failures []error, failed observability.Component, unexpected bool) {
+	type componentResult struct {
+		name      string
+		component observability.Component
+		err       error
+	}
+	results := make(chan componentResult, len(components))
+	for _, component := range components {
+		go func() {
+			results <- componentResult{
+				name:      component.name,
+				component: component.component,
+				err:       component.run(),
+			}
+		}()
+	}
+
+	first := <-results
+	wasCanceled := runtimeContext.Err() != nil
+	lifecycle.Stopping(context.WithoutCancel(runtimeContext))
+	cancelRuntime()
+
+	failures = make([]error, 0, len(components))
+	if first.err == nil && !wasCanceled {
+		first.err = errors.New("stopped unexpectedly")
+		unexpected = true
+	}
+	if first.err != nil {
+		failed = first.component
+		failures = append(failures, fmt.Errorf("%s: %w", first.name, first.err))
+	}
+	for range len(components) - 1 {
+		completed := <-results
+		if completed.err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", completed.name, completed.err))
+		}
+	}
+	return failures, failed, unexpected
+}
+
+// buildReconciler assembles the state engine, the controller that acts on it and
+// the supervisor that restarts the controller. Every failure here is reported
+// the same way by the caller, so they are grouped rather than interleaved with
+// the startup steps that each need their own cleanup.
+func buildReconciler(
+	client *networkmanager.Client,
+	captiveManager *captive.Manager,
+	options setupOptions,
+	lifecycle *observability.Lifecycle,
+) (*appliance.Supervisor, *recovery.Requests, error) {
+	observer := stateengine.NewNetworkManagerObserver(client, options.Interface)
+	engine, err := stateengine.New(observer, stateengine.Config{
+		Requirement: options.Requirement,
+		GracePeriod: options.ActivationWait,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	recoveryRequests := recovery.NewRequests()
+	controller, err := appliance.NewController(
+		engine,
+		captiveManager,
+		recoveryRequests,
+		appliance.Config{
+			ActionTimeout: options.ActivationWait + applianceCleanupTimeout,
+			Observer:      lifecycle,
+		},
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	supervisor, err := appliance.NewSupervisor(controller, appliance.RetryConfig{
+		MaxRestarts:  runtimeMaxRestarts,
+		RestartDelay: runtimeRestartDelay,
+		OnRetry:      retryReporter(lifecycle, observability.ComponentReconciler),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return supervisor, recoveryRequests, nil
 }
 
 func stopManagedResources(
