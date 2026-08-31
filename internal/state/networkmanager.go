@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 
-	"github.com/flavorplus/onboardd/internal/connectivity"
 	"github.com/flavorplus/onboardd/internal/networkmanager"
 )
 
@@ -55,12 +54,8 @@ func (observer *NetworkManagerObserver) Snapshot(ctx context.Context) (Snapshot,
 		DeviceState:   normalizedDeviceState(status.Device.State),
 		ActiveUUID:    status.Device.ActiveUUID,
 		ActiveMode:    activeMode,
-		Connectivity: connectivity.Observation{
-			Activated:       status.Device.State == networkmanager.DeviceStateActivated,
-			HasLocalAddress: len(status.Device.IPv4Addresses) > 0,
-			Internet:        normalizedInternetState(status.Connectivity),
-		},
-		Profiles: normalizedProfiles,
+		Connectivity:  status.Observation(),
+		Profiles:      normalizedProfiles,
 	}, nil
 }
 
@@ -138,20 +133,5 @@ func normalizedDeviceState(value networkmanager.DeviceState) DeviceState {
 		return DeviceConnecting
 	default:
 		return DeviceUnknown
-	}
-}
-
-func normalizedInternetState(value networkmanager.Connectivity) connectivity.InternetState {
-	switch value {
-	case networkmanager.ConnectivityNone:
-		return connectivity.InternetNone
-	case networkmanager.ConnectivityPortal:
-		return connectivity.InternetPortal
-	case networkmanager.ConnectivityLimited:
-		return connectivity.InternetLimited
-	case networkmanager.ConnectivityFull:
-		return connectivity.InternetFull
-	default:
-		return connectivity.InternetUnknown
 	}
 }

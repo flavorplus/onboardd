@@ -2,7 +2,11 @@
 // D-Bus API. D-Bus-specific types remain inside this package.
 package networkmanager
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/flavorplus/onboardd/internal/connectivity"
+)
 
 // Role identifies why onboardd created a NetworkManager profile.
 type Role string
@@ -31,6 +35,23 @@ const (
 	ConnectivityLimited Connectivity = 3
 	ConnectivityFull    Connectivity = 4
 )
+
+// InternetState maps NetworkManager's connectivity enum onto the transport-
+// independent vocabulary that connectivity policy is written against.
+func (value Connectivity) InternetState() connectivity.InternetState {
+	switch value {
+	case ConnectivityNone:
+		return connectivity.InternetNone
+	case ConnectivityPortal:
+		return connectivity.InternetPortal
+	case ConnectivityLimited:
+		return connectivity.InternetLimited
+	case ConnectivityFull:
+		return connectivity.InternetFull
+	default:
+		return connectivity.InternetUnknown
+	}
+}
 
 // DeviceState is the lifecycle state of a NetworkManager device.
 type DeviceState uint32
@@ -118,6 +139,17 @@ func (r DeviceStateReason) String() string {
 type Status struct {
 	Connectivity Connectivity
 	Device       Device
+}
+
+// Observation reduces this status to the facts connectivity policy evaluates. It
+// lives here because every field it reads is a NetworkManager detail this package
+// already owns.
+func (status Status) Observation() connectivity.Observation {
+	return connectivity.Observation{
+		Activated:       status.Device.State == DeviceStateActivated,
+		HasLocalAddress: len(status.Device.IPv4Addresses) > 0,
+		Internet:        status.Connectivity.InternetState(),
+	}
 }
 
 // Device describes a NetworkManager device needed by onboardd.
