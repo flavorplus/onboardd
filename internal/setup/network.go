@@ -255,13 +255,10 @@ func (backend *NetworkBackend) ConnectKnownNetwork(ctx context.Context, uuid str
 		return err
 	}
 	if profile.UUID == status.Device.ActiveUUID {
-		return NewPublicError("active_network", "The device is already connected to this network.")
+		return errActiveNetwork
 	}
 	if !backend.managesInfrastructureProfile(profile) {
-		return NewPublicError(
-			"network_read_only",
-			"This network profile is managed outside onboardd and cannot be activated here.",
-		)
+		return errNetworkReadOnly
 	}
 	previousUUID, previousAddress, err := previousConnection(status)
 	if err != nil {
@@ -287,7 +284,7 @@ func (backend *NetworkBackend) ConnectKnownNetwork(ctx context.Context, uuid str
 // Standalone applies a checkpoint-protected AP transition using server-owned policy.
 func (backend *NetworkBackend) Standalone(ctx context.Context) error {
 	if !backend.options.StandaloneEnabled {
-		return NewPublicError("mode_unavailable", "Standalone mode is not available.")
+		return errModeUnavailableStandalone
 	}
 	previousUUID, previousAddress, err := backend.previousConnection(ctx)
 	if err != nil {
@@ -311,20 +308,14 @@ func (backend *NetworkBackend) Standalone(ctx context.Context) error {
 func (backend *NetworkBackend) previousConnection(ctx context.Context) (string, netip.Addr, error) {
 	status, err := backend.network.Status(ctx, backend.options.Interface)
 	if err != nil {
-		return "", netip.Addr{}, NewPublicError(
-			"current_connection_unavailable",
-			"The device is not ready to change networks. Please try again.",
-		)
+		return "", netip.Addr{}, errCurrentConnectionUnavailable
 	}
 	return previousConnection(status)
 }
 
 func previousConnection(status networkmanager.Status) (string, netip.Addr, error) {
 	if status.Device.State != networkmanager.DeviceStateActivated || status.Device.ActiveUUID == "" {
-		return "", netip.Addr{}, NewPublicError(
-			"current_connection_unavailable",
-			"The device is not ready to change networks. Please try again.",
-		)
+		return "", netip.Addr{}, errCurrentConnectionUnavailable
 	}
 	for _, value := range status.Device.IPv4Addresses {
 		address, parseErr := netip.ParseAddr(value)
@@ -332,10 +323,7 @@ func previousConnection(status networkmanager.Status) (string, netip.Addr, error
 			return status.Device.ActiveUUID, address, nil
 		}
 	}
-	return "", netip.Addr{}, NewPublicError(
-		"current_connection_unavailable",
-		"The device is not ready to change networks. Please try again.",
-	)
+	return "", netip.Addr{}, errCurrentConnectionUnavailable
 }
 
 func (backend *NetworkBackend) knownProfile(
@@ -355,10 +343,7 @@ func (backend *NetworkBackend) knownProfile(
 			return profile, status, nil
 		}
 	}
-	return networkmanager.Profile{}, networkmanager.Status{}, NewPublicError(
-		"known_network_not_found",
-		"This saved network no longer exists.",
-	)
+	return networkmanager.Profile{}, networkmanager.Status{}, errKnownNetworkNotFound
 }
 
 func (backend *NetworkBackend) managesInfrastructureProfile(profile networkmanager.Profile) bool {
