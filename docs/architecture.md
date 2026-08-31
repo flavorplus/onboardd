@@ -124,8 +124,8 @@ internal/setup             product-facing setup operations
 internal/web               API, branding/handoff, and embedded frontend
 internal/config            strict TOML, templates, and device identity
 internal/discovery         Avahi hostname/service publication
-internal/observability     health and redacted lifecycle events
-internal/systemd           readiness, status, and watchdog notification
+internal/observability     health, redacted lifecycle events, and the HTTP and
+                           systemd-notify transports that publish them
 frontend                   TypeScript source and local simulated device
 config                     schema and product examples
 packaging/debian           Debian metadata, service unit, and maintainer scripts
