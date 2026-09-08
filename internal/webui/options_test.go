@@ -36,6 +36,42 @@ func TestOptionsFromRenderedConfiguration(t *testing.T) {
 	}
 }
 
+// The captive handoff view renders before an administrator session exists, so the
+// stable setup address has to be readable from the public appearance resource. It is
+// not a secret: onboardd already advertises the same host name and listener port over
+// mDNS as `_http._tcp`.
+func TestAppearancePublishesSetupURLBeforeAuthentication(t *testing.T) {
+	options := Options{
+		Branding: Branding{
+			ProductName:     "InkyPi",
+			DeviceName:      "Kitchen Display",
+			Title:           "Set up Kitchen Display",
+			Subtitle:        "Choose a connection.",
+			PrimaryColor:    "#123456",
+			BackgroundColor: "#f1f2f3",
+		},
+		Handoff: &Handoff{SetupURL: "http://inkypi.local:18080/"},
+	}
+	api, _, _ := newTestAPIWithOptions(t, options)
+	handler, err := NewHandler(api, fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("setup")},
+	}, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, testOrigin+appearanceURL, nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("appearance status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if !strings.Contains(response.Body.String(), `"setup_url":"http://inkypi.local:18080/"`) {
+		t.Fatalf("appearance response = %s", response.Body.String())
+	}
+}
+
 func TestAppearanceIsPublicAndExcludedFromAPISetup(t *testing.T) {
 	branding := Branding{
 		ProductName:     "InkyPi",

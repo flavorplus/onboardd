@@ -4,6 +4,7 @@ import { APIError, SetupAPI } from "./api.ts";
 import {
   brandingPalette,
   initialView,
+  isLandingPath,
   modeLabel,
   needsBrowserHandoff,
   strengthLabel,
@@ -39,6 +40,10 @@ async function start(): Promise<void> {
   try {
     branding = await api.appearance();
     applyBranding();
+    if (isLandingPath(window.location.pathname)) {
+      showCaptiveHandoff();
+      return;
+    }
     bootstrap = await api.bootstrap();
     const view = initialView(bootstrap);
     if (view === "operation" && bootstrap.operation) {
@@ -140,6 +145,35 @@ function frame(options: {
   shell.append(header, content);
   app.replaceChildren(shell);
   return content;
+}
+
+// showCaptiveHandoff renders the view the captive redirect targets. The captive viewer
+// is dismissed together with the provisioning access point, so setup has to continue in
+// a browser that survives the radio transition. This runs before any authenticated
+// request: the visitor has no administrator session yet, and does not need one to be
+// handed the stable setup address.
+function showCaptiveHandoff(): void {
+  const content = frame({
+    eyebrow: "Device setup",
+    title: "Continue in your browser",
+    description: "Keep setup available while this device changes Wi-Fi networks.",
+  });
+  const setupURL = branding.setup_url;
+  if (!setupURL) {
+    showInlineError(
+      content,
+      "This device could not report its own setup address.",
+      () => void start(),
+    );
+    return;
+  }
+  content.append(link("Open device setup", setupURL, "button button-primary landing-action"));
+  const fallback = element("p", "landing-fallback");
+  fallback.append(
+    document.createTextNode("If nothing opens, enter this address in Safari or Chrome:"),
+    textElement("strong", setupURL),
+  );
+  content.append(fallback);
 }
 
 function showModeChoice(): void {
@@ -926,13 +960,33 @@ function button(label: string, className: string, onClick: () => void): HTMLButt
   return control;
 }
 
+// Captive-portal mini-browsers have no tab model, so a target="_blank" anchor never
+// navigates there. The anchor stays a plain same-tab link that those viewers honor, and
+// only a browser that actually grants a new window keeps the current page loaded.
 function link(label: string, href: string, className: string): HTMLAnchorElement {
   const control = document.createElement("a");
   control.className = className;
   control.textContent = label;
   control.href = href;
-  control.target = "_blank";
-  control.rel = "noopener noreferrer";
+  control.rel = "noreferrer";
+  control.addEventListener("click", (event) => {
+    // Omit the noopener feature: it makes window.open return null on success, which
+    // would leave us unable to tell a granted window from a refused one.
+    let opened: Window | null = null;
+    try {
+      opened = window.open(href, "_blank");
+    } catch {
+      opened = null;
+    }
+    if (!opened) return;
+    try {
+      opened.opener = null;
+    } catch {
+      // Cross-origin windows may refuse the assignment; the destination is the
+      // appliance itself, so losing this hardening step is not a risk here.
+    }
+    event.preventDefault();
+  });
   return control;
 }
 

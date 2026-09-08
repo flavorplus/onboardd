@@ -37,37 +37,6 @@ body {
 		linear-gradient(145deg, rgb(var(--background-rgb)) 0%, rgb(var(--accent-rgb) / 13%) 100%);
 }
 
-.landing-body {
-  display: grid;
-  place-items: center;
-  padding: clamp(1rem, 5vw, 2rem);
-}
-
-.landing-shell {
-  width: min(100%, 28rem);
-  padding: clamp(2rem, 8vw, 3rem);
-  text-align: center;
-  background: rgb(255 255 255 / 94%);
-  border: 1px solid rgb(var(--accent-rgb) / 20%);
-  border-radius: 1.75rem;
-  box-shadow: var(--shadow);
-}
-
-.landing-shell h1,
-.landing-shell .lede {
-  max-width: none;
-}
-
-.landing-wireless-mark {
-  display: inline-flex;
-  gap: 0.2rem;
-  align-items: flex-end;
-  width: 3rem;
-  height: 2.5rem;
-  margin-bottom: 1.5rem;
-  padding: 0.15rem;
-}
-
 .landing-action {
   width: 100%;
   margin-top: 2rem;
@@ -115,7 +84,7 @@ select:focus-visible {
   margin: 0 auto;
   overflow: hidden;
   background: rgb(255 255 255 / 94%);
-	border: 1px solid rgb(var(--accent-rgb) / 20%);
+  border: 1px solid rgb(var(--accent-rgb) / 20%);
   border-radius: 1.75rem;
   box-shadow: var(--shadow);
 }

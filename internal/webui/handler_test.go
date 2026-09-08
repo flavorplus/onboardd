@@ -15,26 +15,23 @@ var assetReference = regexp.MustCompile(`(?:src|href)="/([^"?#]+)`)
 
 func TestEmbeddedAssets(t *testing.T) {
 	assets := Assets()
-	for _, name := range []string{"index.html", "landing.html"} {
-		page, err := fs.ReadFile(assets, name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if bytes.Contains(page, []byte("/src/")) {
-			t.Fatalf("embedded %s references Vite development source", name)
-		}
-		for _, match := range assetReference.FindAllSubmatch(page, -1) {
-			if _, err := fs.Stat(assets, string(match[1])); err != nil {
-				t.Errorf("embedded %s references missing asset %q: %v", name, match[1], err)
-			}
-		}
-	}
-	landing, err := fs.ReadFile(assets, "landing.html")
+	const name = "index.html"
+	page, err := fs.ReadFile(assets, name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(landing, []byte("__ONBOARDD_SETUP_URL__")) {
-		t.Fatal("embedded landing page is missing the runtime setup URL placeholder")
+	if bytes.Contains(page, []byte("/src/")) {
+		t.Fatalf("embedded %s references Vite development source", name)
+	}
+	for _, match := range assetReference.FindAllSubmatch(page, -1) {
+		if _, err := fs.Stat(assets, string(match[1])); err != nil {
+			t.Errorf("embedded %s references missing asset %q: %v", name, match[1], err)
+		}
+	}
+	// The captive handoff is a route of the single-page application, so no second
+	// document may reappear in the build without a deliberate change here.
+	if _, err := fs.Stat(assets, "landing.html"); err == nil {
+		t.Fatal("embedded frontend still ships a separate landing document")
 	}
 }
 

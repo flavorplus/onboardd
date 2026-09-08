@@ -4,6 +4,7 @@ import test from "node:test";
 import {
 	brandingPalette,
 	initialView,
+	isLandingPath,
 	modeLabel,
 	needsBrowserHandoff,
 	strengthLabel,
@@ -104,4 +105,12 @@ test("browser handoff is hidden only on the stable setup origin", () => {
 		true,
 	);
 	assert.equal(needsBrowserHandoff("not a URL", "http://device.local:18080/"), true);
+});
+
+test("the captive redirect route is recognised without matching setup routes", () => {
+	assert.equal(isLandingPath("/landing"), true);
+	assert.equal(isLandingPath("/landing/"), true);
+	assert.equal(isLandingPath("/"), false);
+	assert.equal(isLandingPath("/networks"), false);
+	assert.equal(isLandingPath("/landing-page"), false);
 });

@@ -161,8 +161,14 @@ func TestSetupOptionsUseRenderedConfigAndEmbeddedAssets(t *testing.T) {
 	if _, err := fs.Stat(options.Assets, "index.html"); err != nil {
 		t.Fatalf("embedded assets: %v", err)
 	}
-	if _, err := fs.Stat(options.Assets, "landing.html"); err != nil {
-		t.Fatalf("embedded landing page: %v", err)
+	// The captive redirect must target the setup application's own handoff route on the
+	// private listener. That URL is also what establishes the origin the administrator
+	// session cookie and the API origin check are scoped to.
+	if options.PortalURL != "http://10.42.0.1:19000/landing" {
+		t.Fatalf("portal URL = %q", options.PortalURL)
+	}
+	if options.PortalOrigin != "http://10.42.0.1:19000" {
+		t.Fatalf("portal origin = %q", options.PortalOrigin)
 	}
 }
 
