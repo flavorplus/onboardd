@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gofmt -l:*)",
+      "Bash(go build:*)",
+      "Bash(go vet:*)",
+      "Bash(go test:*)",
+      "Bash(golangci-lint:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git ls-files:*)",
+      "Skill(cc-skills-golang:golang-code-style)",
+      "Skill(cc-skills-golang:golang-code-style:*)",
+      "Skill(cc-skills-golang:golang-naming)",
+      "Skill(cc-skills-golang:golang-naming:*)",
+      "Skill(cc-skills-golang:golang-project-layout)",
+      "Skill(cc-skills-golang:golang-project-layout:*)",
+      "Skill(cc-skills-golang:golang-refactoring)",
+      "Skill(cc-skills-golang:golang-refactoring:*)"
+    ]
+  }
+}

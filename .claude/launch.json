@@ -1,0 +1,25 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "onboardd-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "cwd": "frontend",
+      "port": 5173
+    },
+    {
+      "name": "onboardd-frontend-branded",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:branded"
+      ],
+      "cwd": "frontend",
+      "port": 5173
+    }
+  ]
+}

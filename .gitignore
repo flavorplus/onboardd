@@ -19,3 +19,6 @@ coverage.out
 
 # Frontend dependencies. Production output is committed under internal/webui/dist.
 node_modules/
+
+# Personal Claude Code settings. Shared project settings are in .claude/settings.json.
+.claude/settings.local.json
