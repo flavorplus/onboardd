@@ -45,6 +45,41 @@ Exit criteria:
 The support matrices, scenarios, evidence requirements, and sign-off record live in
 the durable [release-validation checklist](release.md).
 
+## Captive release to a normal browser
+
+Setup must continue in a normal browser, because the captive viewer dies with the
+provisioning access point while a real browser tab survives the radio transition and
+can reach the stable mDNS URL again. Today the `/landing` view can only ask the user to
+carry the URL across by hand; the viewer itself is never released.
+
+Commercial venue portals do not open the real browser. They stop being captive: the
+portal authorizes the client, the next platform probe succeeds, and the operating
+system dismisses the viewer on its own. The equivalent for onboardd is to sequence the
+probe answers described under [Captive viewers](architecture.md#captive-viewers):
+
+1. redirect the probes while the `/landing` view still needs to be found;
+2. answer each probe with its exact expected response once the user has chosen to
+   continue in a browser;
+3. keep answering it for as long as provisioning is active, so the platform does not
+   later decide the setup network is unusable and roam back to a known network
+   mid-setup.
+
+Both the dnsmasq fragment and the nftables table are already owned by
+`internal/captive`, so this stays inside one package and is testable with `httptest`.
+
+Two constraints are settled and should not be rediscovered:
+
+- The historical iOS behavior where a plain link inside the captive viewer opened
+  Safari is deprecated. Handing off by link is not a supported mechanism on current
+  iOS, so releasing the viewer is the only route to the real browser.
+- RFC 8910 (DHCP option 114) with an RFC 8908 `application/captive+json` endpoint is
+  the standards-based form of the same release, and its `venue-info-url` is the one
+  field platforms open in the real browser. RFC 8908 requires the API endpoint to be
+  reachable over HTTPS with a validated certificate, and requires TLS for
+  `user-portal-url`. The provisioning network is deliberately plain HTTP with no
+  trusted certificate for `10.42.0.1`, so option 114 can only ever be a best-effort
+  addition for lenient clients, never the primary path.
+
 ## Deferred beyond v1
 
 - enterprise Wi-Fi;

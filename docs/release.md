@@ -177,16 +177,32 @@ Run the package lifecycle on at least one ARM64 Pi and the AMD64 environment:
 
 ## Captive-client matrix
 
-| Client | Captive landing | Normal browser setup | Reconnect and completion | Result |
-| --- | --- | --- | --- | --- |
-| iOS / iPhone | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
-| Android | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
-| macOS | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
-| Windows | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
+| Client | Captive `/landing` view | Handoff action navigates | Normal browser setup | Reconnect and completion | Result |
+| --- | --- | --- | --- | --- | --- |
+| iOS / iPhone | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
+| Android | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
+| macOS | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
+| Windows | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED | NOT TESTED |
 
 For each client, verify the captive viewer offers the browser handoff, the stable mDNS
 setup page survives the Wi-Fi transition, operation polling recovers after a stalled
 request, and the optional application link is shown only when its health check passes.
+
+The handoff-action column is a regression check, not a convenience. A control that
+relies on `target="_blank"` or `window.open` is silently discarded by every captive
+viewer, so it must be confirmed by tapping it on each client rather than in a desktop
+browser, where the same markup always appears to work. Record what the tap did:
+navigated in the viewer, opened a real browser, or nothing at all.
+
+Also record, per client, the behavior that the planned
+[captive release](roadmap.md#captive-release-to-a-normal-browser) depends on:
+
+- whether the viewer stays open for the whole provisioning session, or the platform
+  dismisses it or roams to a known network on its own;
+- whether the platform reaches the probe URL for its own family and what it does with
+  the redirect;
+- whether the setup URL, typed by hand into a normal browser while still joined to the
+  provisioning network, resolves and loads.
 
 ## Product configurations
 

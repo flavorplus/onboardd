@@ -76,30 +76,67 @@ onboardd adds only:
 - a wildcard dnsmasq fragment while provisioning is active;
 - an nftables redirect from port 80 on the setup interface to the private configured
   listener port;
-- captive-detection responses and a small landing page that opens the stable setup
-  URL in a normal browser.
+- a redirect of every cleartext request that is not already addressed to the listener
+  — including every platform captive-detection probe — to one canonical URL.
+
+That canonical URL is the setup application's own `/landing` route on the private
+listener. There is no second document: the captive entry point is a route of the same
+single-page application, so it inherits the configured palette, logo, and product name
+instead of carrying a duplicate copy of them. The redirect also exists to establish one
+origin. The administrator session cookie and the API origin check are both scoped to an
+origin, so a client left on whichever probe host it happened to use would silently lose
+its session on the next hop.
+
+The `/landing` route renders before any authenticated request, because a captive viewer
+cannot complete the setup flow. It needs only the stable setup address, which is
+published in the public `/appearance.json`. Publishing it discloses nothing: it names
+the same host name and port the listener already advertises over mDNS.
 
 The private HTTP listener remains alive across all modes. The stable URL is derived
 from the existing Avahi host name and advertised as `_http._tcp`; onboardd never
 changes the host name.
 
+### Captive viewers
+
+Every supported platform polls one fixed cleartext probe URL and opens a sandboxed
+captive viewer when the answer is not the expected one:
+
+- iOS and macOS: `http://captive.apple.com/hotspot-detect.html`, expecting HTML with
+  `Success` in both the title and the body;
+- Android: `http://connectivitycheck.gstatic.com/generate_204`, expecting status 204
+  with an empty body;
+- Windows: `http://www.msftconnecttest.com/connecttest.txt`, expecting the plain text
+  `Microsoft Connect Test`.
+
+onboardd answers all of them with the same redirect to the `/landing` route, so the
+viewer opens and stays open for as long as provisioning is active. Nothing releases it
+early, and nothing depends on a probe succeeding.
+
+That viewer is not a browser. It has no tab or window model, so `target="_blank"` and
+`window.open` are discarded rather than honored: a control that relies on either does
+nothing at all when tapped. Links that must work inside the viewer are therefore plain
+same-tab navigations. The setup UI upgrades a link to a separate window only after
+`window.open` returns one, and the `/landing` view additionally prints the setup URL as
+text so it can be typed into a normal browser by hand.
+
 The API allows one network operation at a time. Operation results remain queryable
 after a browser disconnect, so the normal browser can reconnect through mDNS after the
 radio transition.
 
-Static frontend files, the captive landing page, `/appearance.json`, the optional
-`/appearance/logo`, and `/healthz` are public. Appearance contains only product names,
-setup copy, validated colors, and the logo URL so the login view can use the same
-styling as the authenticated application. `/healthz` is mounted outside `/api/v1/` so a
-supervisor can poll it without a session; it returns only the redaction-safe lifecycle
-snapshot — status, stage, mode, reason, sequence — and never configuration, profile
-identifiers, or error text. Every `/api/v1/` route except session creation requires an
-opaque administrator session cookie. The cookie is HTTP-only, strict same-site, scoped
-to `/api/v1/`, and replaced whenever onboardd starts. The login password comes from a file
-that must not be readable or writable by group or other users; onboardd checks the
-mode, not the owner. Mutations additionally require the per-process CSRF token and an
-accepted request origin. This prevents casual changes by other users of a shared LAN;
-the deliberately plain-HTTP captive workflow does not provide transport encryption.
+Static frontend files, `/appearance.json`, the optional `/appearance/logo`, and
+`/healthz` are public. Appearance contains only product names, setup copy, validated
+colors, the logo URL, and the mDNS-advertised setup URL, so the login and captive
+handoff views can use the same styling as the authenticated application. `/healthz` is
+mounted outside `/api/v1/` so a supervisor can poll it without a session; it returns
+only the redaction-safe lifecycle snapshot — status, stage, mode, reason, sequence — and
+never configuration, profile identifiers, or error text. Every `/api/v1/` route except
+session creation requires an opaque administrator session cookie. The cookie is
+HTTP-only, strict same-site, scoped to `/api/v1/`, and replaced whenever onboardd
+starts. The login password comes from a file that must not be readable or writable by
+group or other users; onboardd checks the mode, not the owner. Mutations additionally
+require the per-process CSRF token and an accepted request origin. This prevents casual
+changes by other users of a shared LAN; the deliberately plain-HTTP captive workflow
+does not provide transport encryption.
 
 ## Recovery and service lifecycle
 

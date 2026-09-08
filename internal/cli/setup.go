@@ -178,7 +178,7 @@ func setupOptionsFromConfig(resolved appconfig.Config, hostname string) (setupOp
 	if err != nil {
 		return setupOptions{}, fmt.Errorf("invalid built-in provisioning address: %w", err)
 	}
-	canonicalURL := portalURLFor(address, appconfig.CaptivePublicPort)
+	canonicalURL := portalURLFor(address, resolved.Portal.ListenerPort)
 	origin, err := portalOrigin(canonicalURL)
 	if err != nil {
 		return setupOptions{}, err
@@ -325,12 +325,18 @@ func portalOrigin(value string) (string, error) {
 	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
+// landingPath is the setup application route that explains the browser handoff. The
+// captive redirect targets it directly so a captive viewer arrives on the handoff view
+// instead of the authenticated setup flow, which it cannot complete.
+const landingPath = "/landing"
+
+// portalURLFor builds the one origin every captive client is redirected to. It names
+// the private listener rather than the public captive port so the redirect lands on
+// the setup application itself, and so the origin it establishes is the same one the
+// setup session cookie is later scoped to.
 func portalURLFor(address netip.Prefix, port uint16) string {
-	host := address.Addr().String()
-	if port != 80 {
-		host = net.JoinHostPort(host, fmt.Sprint(port))
-	}
-	return "http://" + host + "/"
+	host := net.JoinHostPort(address.Addr().String(), fmt.Sprint(port))
+	return "http://" + host + landingPath
 }
 
 func readSecurePasswordFile(path string) (string, error) {

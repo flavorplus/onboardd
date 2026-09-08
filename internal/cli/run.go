@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
 	"net/http"
 	"strings"
@@ -68,11 +67,6 @@ func runManagedAppliance(
 
 	runtimeContext, cancelRuntime := context.WithCancel(ctx)
 	defer cancelRuntime()
-	landingPage, err := fs.ReadFile(options.Assets, "landing.html")
-	if err != nil {
-		return fmt.Errorf("frontend landing page: %w", err)
-	}
-
 	dns, err := captive.NewDNSConfigFile(options.DNSConfigPath)
 	if err != nil {
 		return err
@@ -93,7 +87,6 @@ func runManagedAppliance(
 		runtimeContext,
 		client,
 		dns,
-		landingPage,
 		options,
 		lifecycle,
 	)
@@ -286,7 +279,6 @@ func buildApplianceComponents(
 	runtimeContext context.Context,
 	client *networkmanager.Client,
 	dns *captive.DNSConfigFile,
-	landingPage []byte,
 	options setupOptions,
 	lifecycle *observability.Lifecycle,
 ) (applianceComponents, error) {
@@ -348,9 +340,7 @@ func buildApplianceComponents(
 	setupHandler.Handle("/", applicationHandler)
 	handler, err := captive.NewHTTPHandler(
 		options.PortalURL,
-		options.Branding.Handoff.SetupURL,
 		options.ListenerHTTPPort,
-		landingPage,
 		setupHandler,
 	)
 	if err != nil {

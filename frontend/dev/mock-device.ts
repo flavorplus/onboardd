@@ -61,6 +61,8 @@ const networks: Network[] = [
   { ssid: "Weak test network", security: "protected", strength: 19 },
 ];
 
+const mockSetupURL = "http://127.0.0.1:5173/";
+
 export class MockDevice {
   readonly capabilities: Capabilities;
 
@@ -98,7 +100,9 @@ export class MockDevice {
   }
 
   appearance(): Branding {
-    return { ...this.branding };
+    // The device publishes the stable setup address here as well as in the
+    // authenticated bootstrap, because the captive handoff view needs it first.
+    return { ...this.branding, setup_url: mockSetupURL };
   }
 
   handle(request: MockRequest, now = Date.now()): MockResponse {
@@ -166,7 +170,7 @@ export class MockDevice {
       current_mode: this.currentMode,
       operation,
       handoff: {
-        setup_url: "http://127.0.0.1:5173/",
+        setup_url: mockSetupURL,
         application: {
           label: `Open ${this.branding.product_name}`,
           url: applicationReady ? "http://device.local/" : undefined,

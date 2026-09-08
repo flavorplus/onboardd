@@ -38,9 +38,14 @@ type Branding struct {
 	BackgroundColor string `json:"background_color"`
 }
 
+// appearanceResponse is public. SetupURL is safe to publish here: it names the Avahi
+// host name and listener port that onboardd already advertises as `_http._tcp`, so any
+// client on the network can discover the same address by browsing mDNS. The captive
+// handoff view needs it before an administrator session exists.
 type appearanceResponse struct {
 	Branding
-	LogoURL string `json:"logo_url,omitempty"`
+	LogoURL  string `json:"logo_url,omitempty"`
+	SetupURL string `json:"setup_url,omitempty"`
 }
 
 // Options supplies product presentation without coupling the HTTP package to the TOML
@@ -125,6 +130,9 @@ func resolveOptions(options []Options) (resolvedOptions, error) {
 	response := appearanceResponse{Branding: branding}
 	if logo != nil {
 		response.LogoURL = logoURL
+	}
+	if handoffInfo != nil {
+		response.SetupURL = handoffInfo.SetupURL
 	}
 	if handoffInfo != nil && handoffInfo.HealthCheckURL != "" && healthChecker == nil {
 		healthChecker = newHealthChecker()
